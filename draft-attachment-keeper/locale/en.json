@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Draft attachment keeper",
+    "description": "Keeps images and files you attached to the composer when you switch Sessions before sending.",
+    "detail": "docs/DETAIL.md"
+  }
+}

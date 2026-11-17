@@ -1,0 +1,19 @@
+# dependencies / build输出
+node_modules/
+dist/
+*.tsbuildinfo
+
+# OS / editor 噪声
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*~
+
+# 本地垃圾
+.tmp/
+.trash/
+*.log
+*.bak
+*.bak-*
+*.orig

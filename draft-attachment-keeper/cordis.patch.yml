@@ -1,0 +1,3 @@
+- insert:
+    - id: draft-attachment-keeper
+      name: '@local/draft-attachment-keeper'

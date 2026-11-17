@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "草稿附件保留",
+    "description": "发送前切换会话时，保留已经放进输入框的图片和文件。",
+    "detail": "docs/DETAIL.md"
+  }
+}

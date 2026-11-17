@@ -1,0 +1,12 @@
+# dsh-plugin-session-quick-switch bundle patch.
+#
+# The package is dual-face but only the browser half does work: this row mounts
+# the node half (exports ".") in the Host process, which is what makes the Host
+# Loader know the package, and the `dsh.client` declaration in package.json makes
+# the browser half (exports "./client") load in the web GUI.
+#
+# Activate with:
+#   dsh plugin --profile <name> add link:<abs path to this package>
+- insert:
+    - id: session-quick-switch
+      name: 'dsh-plugin-session-quick-switch'
