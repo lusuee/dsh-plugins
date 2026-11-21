@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "会话文件",
+    "description": "列出本会话由工具写入、编辑或交付的所有文件，支持搜索、筛选与一键在右侧预览。",
+    "detail": "docs/DETAIL.zh.md"
+  }
+}
