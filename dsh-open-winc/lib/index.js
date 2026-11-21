@@ -20,7 +20,7 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
-import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
+import { basename, delimiter, dirname, extname, isAbsolute, join, resolve } from 'node:path'
 
 /** Cordis plugin name; also the bundle row id in cordis.patch.yml. */
 export const name = 'dsh-open-winc'
@@ -59,14 +59,21 @@ export function editorCandidates() {
   if (typeof programFiles === 'string' && programFiles !== '') {
     list.push(join(programFiles, 'winc', 'winc.exe'))
   }
-  list.push('winc.exe')
+  // Winc's macOS app bundle; the installer also links the binary into
+  // /usr/local/bin, but a drag-install need not have PATH updated.
+  if (process.platform === 'darwin') {
+    list.push('/Applications/winc.app/Contents/MacOS/winc')
+    list.push('/Applications/Winc.app/Contents/MacOS/winc')
+  }
+  list.push(process.platform === 'win32' ? 'winc.exe' : 'winc')
   return list
 }
 
 /**
  * Resolve one command to an existing file without running a shell: absolute and
- * relative paths are used as given, a bare name is searched on PATH with
- * PATHEXT, which is what `spawn` would do but with a testable answer.
+ * relative paths are used as given, a bare name is searched on PATH with the
+ * platform's PATH delimiter (and PATHEXT on Windows), which is what `spawn`
+ * would do but with a testable answer.
  * @param command - candidate from {@link editorCandidates}.
  * @returns the resolved path, or null when nothing matches.
  */
@@ -76,10 +83,11 @@ export function lookPath(command) {
     const resolved = resolve(command)
     return existsSync(resolved) ? resolved : null
   }
-  const extensions = extname(command) === ''
+  const windows = process.platform === 'win32'
+  const extensions = windows && extname(command) === ''
     ? String(process.env.PATHEXT ?? '.COM;.EXE').split(';').filter((ext) => ext !== '')
     : ['']
-  const directories = String(process.env.PATH ?? '').split(';').filter((dir) => dir !== '')
+  const directories = String(process.env.PATH ?? '').split(delimiter).filter((dir) => dir !== '')
   for (const directory of directories) {
     for (const extension of extensions) {
       const candidate = join(directory, command + extension)
