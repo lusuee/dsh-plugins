@@ -65,7 +65,7 @@
         label: 'Winc',
         open: (path) => (zh ? `在 Winc 中打开 ${path}` : `Open ${path} in Winc`),
         opened: zh ? '已打开' : 'Opened',
-        missing: zh ? '未找到 winc.exe' : 'winc.exe not found',
+        missing: zh ? '未找到 Winc' : 'Winc not found',
         failed: zh ? '打开失败' : 'Could not open',
       }
 

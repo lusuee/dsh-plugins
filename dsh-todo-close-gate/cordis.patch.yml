@@ -1,5 +1,6 @@
-- id: todo-close-gate
-  name: 'dsh-todo-close-gate'
-  config:
-    enabled: true
-    gatePending: false
+- insert:
+    - id: todo-close-gate
+      name: 'dsh-todo-close-gate'
+      config:
+        enabled: true
+        gatePending: false

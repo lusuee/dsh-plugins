@@ -1,0 +1,25 @@
+{
+  "name": "dsh-agy-quota-chip",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Displays Antigravity 5-hour rolling and weekly quota details next to the composer model selector.",
+  "type": "module",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}

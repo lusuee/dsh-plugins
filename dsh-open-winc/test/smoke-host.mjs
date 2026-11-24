@@ -4,7 +4,7 @@
 import { strict as assert } from 'node:assert'
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
   editorCandidates,
@@ -100,7 +100,7 @@ test('editorCandidates puts the environment variable first', () => {
   try {
     const candidates = editorCandidates()
     assert.equal(candidates[0], 'C:\\custom\\winc.exe')
-    assert.ok(candidates.includes('winc.exe'))
+    assert.ok(candidates.includes(process.platform === 'win32' ? 'winc.exe' : 'winc'))
   } finally {
     if (saved === undefined) delete process.env.DSH_OPEN_WINC_EDITOR
     else process.env.DSH_OPEN_WINC_EDITOR = saved
@@ -108,23 +108,28 @@ test('editorCandidates puts the environment variable first', () => {
 })
 
 test('lookPath resolves a real binary and rejects a missing one', () => {
-  const where = lookPath(join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'where.exe'))
-  assert.ok(where !== null && existsSync(where))
-  assert.equal(lookPath('dsh-open-winc-does-not-exist.exe'), null)
+  const real = process.platform === 'win32'
+    ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'where.exe')
+    : '/bin/sh'
+  const found = lookPath(real)
+  assert.ok(found !== null && existsSync(found))
+  assert.equal(lookPath('dsh-open-winc-does-not-exist'), null)
 })
 
-test('resolveEditor finds the installed Winc on this machine', () => {
+test('resolveEditor only returns an editor that exists', () => {
   resetEditorProbe()
   const editor = resolveEditor()
-  const expected = join(process.env.LOCALAPPDATA ?? '', 'Programs', 'winc', 'winc.exe')
-  if (existsSync(expected)) {
-    assert.equal(editor, expected)
-  } else {
-    assert.ok(editor === null || editor.endsWith('winc.exe'))
-  }
+  assert.ok(editor === null || existsSync(editor), `resolved editor exists: ${editor}`)
 })
 
 test('resolveEditor reports editor-missing when nothing is installed', async () => {
+  // A real macOS app bundle is an absolute candidate, so a machine that has Winc
+  // installed cannot simulate an empty machine by editing PATH.
+  if (process.platform === 'darwin'
+    && (existsSync('/Applications/winc.app/Contents/MacOS/winc')
+      || existsSync('/Applications/Winc.app/Contents/MacOS/winc'))) {
+    return
+  }
   const saved = {
     env: process.env.DSH_OPEN_WINC_EDITOR,
     local: process.env.LOCALAPPDATA,
@@ -200,13 +205,16 @@ test('status passes when the composition has no connection service', async () =>
 test('open launches the editor detached and reports the directory', async () => {
   const saved = process.env.DSH_OPEN_WINC_EDITOR
   // A harmless stand-in that exits at once and writes nothing.
-  process.env.DSH_OPEN_WINC_EDITOR = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'where.exe')
+  const standIn = process.platform === 'win32'
+    ? join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'where.exe')
+    : '/usr/bin/true'
+  process.env.DSH_OPEN_WINC_EDITOR = standIn
   resetEditorProbe()
   try {
     const res = response()
     await handleOpen(context(), request('POST', { path: workdir }), res)
     assert.equal(res.statusCode, 200)
-    assert.deepEqual(res.json(), { ok: true, editor: 'where.exe', path: workdir })
+    assert.deepEqual(res.json(), { ok: true, editor: basename(standIn), path: workdir })
   } finally {
     if (saved === undefined) delete process.env.DSH_OPEN_WINC_EDITOR
     else process.env.DSH_OPEN_WINC_EDITOR = saved

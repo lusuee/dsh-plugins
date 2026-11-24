@@ -24,7 +24,8 @@ DSH 0.2.2-rc.2 起，`dsh-client-ui-open-in-app` 不再向
 
 - **目录校验**：只接受绝对路径且必须是已存在的目录，长度上限 4096；失败返回 `{reason: 'bad-path'}`。
 - **编辑器查找**：`DSH_OPEN_WINC_EDITOR` → `%LOCALAPPDATA%\Programs\winc\winc.exe` →
-  `%ProgramFiles%\winc\winc.exe` → `PATH` 上的 `winc.exe`。每进程只探测一次，新装 Winc 需重启 DSH。
+  `%ProgramFiles%\winc\winc.exe` → macOS `/Applications/winc.app/Contents/MacOS/winc` →
+  `PATH` 上的 `winc`（Windows 为 `winc.exe`）。每进程只探测一次，新装 Winc 需重启 DSH。
 - **启动**：`spawn(<winc> , [<dir>])`，`detached` + `stdio: 'ignore'` + `unref()`，编辑器独立于
   DSH 存活；不需要 `-n`（Winc 默认在已有窗口里开文件夹）。
 - **安全**：三条路由先问 `ctx.connection.requestRejection(req)`（Host/Origin fence，
