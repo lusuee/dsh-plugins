@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Panel Pin Persistence",
+    "description": "Remembers which sidebar panel launchers you unpinned, across restarts.",
+    "detail": "docs/DETAIL.md"
+  }
+}

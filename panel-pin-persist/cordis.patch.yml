@@ -1,0 +1,3 @@
+- insert:
+    - id: panel-pin-persist
+      name: '@local/panel-pin-persist'

@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "面板固定状态持久化",
+    "description": "记住你在侧栏取消固定的面板启动器，重启后不再还原。",
+    "detail": "docs/DETAIL.md"
+  }
+}
