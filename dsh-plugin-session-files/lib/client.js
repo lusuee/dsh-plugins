@@ -56,6 +56,18 @@ window.__ModuleLoader__.load({
       'row.root': '工作区根目录',
       'row.open': '打开',
       'row.copy': '复制路径',
+      'row.trash': '回收',
+      'row.trashed': '已回收',
+      'trash.title': '回收这个文件？',
+      'trash.body': '会把它送入系统回收站；回收站不可写时移到同目录的 .trash 隔离区，两种都还能还原。',
+      'trash.cancel': '取消',
+      'trash.confirm': '回收',
+      'trash.busy': '回收中…',
+      'trash.done': '已送入回收站：{name}',
+      'trash.quarantined': '回收站不可用，已移入隔离区：{path}',
+      'trash.failed': '回收失败：{message}',
+      'trash.missing': '文件已不存在。',
+      'trash.notTracked': '这个路径不在本会话文件列表里。',
       'count.files': '{count} 个文件',
       'empty.title': '本会话还没有产生文件',
       'empty.body': 'Agent 写入、编辑或交付文件后，会出现在这里。',
@@ -84,6 +96,18 @@ window.__ModuleLoader__.load({
       'row.root': 'workspace root',
       'row.open': 'Open',
       'row.copy': 'Copy path',
+      'row.trash': 'Recycle',
+      'row.trashed': 'Recycled',
+      'trash.title': 'Recycle this file?',
+      'trash.body': 'It goes to the system Recycle Bin; when the bin is unavailable it moves to a same-directory .trash quarantine. Both stay restorable.',
+      'trash.cancel': 'Cancel',
+      'trash.confirm': 'Recycle',
+      'trash.busy': 'Recycling…',
+      'trash.done': 'Sent to the Recycle Bin: {name}',
+      'trash.quarantined': 'Recycle Bin unavailable; moved to quarantine: {path}',
+      'trash.failed': 'Recycle failed: {message}',
+      'trash.missing': 'The file is already gone.',
+      'trash.notTracked': 'That path is not in this session file list.',
       'count.files': '{count} files',
       'empty.title': 'No files yet',
       'empty.body': 'Files appear here once the agent writes, edits, or delivers them.',
@@ -154,6 +178,17 @@ window.__ModuleLoader__.load({
      */
     function foldsCase(cwd) {
       return /^[A-Za-z]:\//.test(cwd) || cwd.slice(0, 2) === '//'
+    }
+
+    /**
+     * The key a file is remembered by: paths fold to lower case on Windows.
+     * @param cwd - the Session working directory.
+     * @param path - the file path.
+     * @returns the comparison key.
+     */
+    function trackedKey(cwd, path) {
+      var normalized = normalizePath(path)
+      return foldsCase(cwd) ? normalized.toLowerCase() : normalized
     }
 
     /**
@@ -333,6 +368,70 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * The sessionStorage slot remembering which files this page already recycled.
+     * @param sessionId - the Session id.
+     * @returns the storage key.
+     */
+    function trashedStorageKey(sessionId) {
+      return 'session-files:trashed:' + String(sessionId || '')
+    }
+
+    /**
+     * Load the recycled-file keys this page remembers for one Session.
+     * @param sessionId - the Session id.
+     * @returns the set of recycled keys.
+     */
+    function loadTrashed(sessionId) {
+      try {
+        var raw = window.sessionStorage.getItem(trashedStorageKey(sessionId))
+        if (typeof raw !== 'string' || raw === '') return new Set()
+        var parsed = JSON.parse(raw)
+        if (!Array.isArray(parsed)) return new Set()
+        return new Set(parsed.filter(function (value) { return typeof value === 'string' }))
+      } catch (error) {
+        return new Set()
+      }
+    }
+
+    /**
+     * Persist the recycled-file keys for one Session.
+     * @param sessionId - the Session id.
+     * @param keys - the set to write.
+     */
+    function saveTrashed(sessionId, keys) {
+      try {
+        window.sessionStorage.setItem(trashedStorageKey(sessionId), JSON.stringify(Array.from(keys)))
+      } catch (error) {
+        /* private mode or a full quota: the list still works for this page */
+      }
+    }
+
+    /**
+     * Ask the Host to recycle one Session-tracked file. The Host re-checks that
+     * the path belongs to the Session before it touches the file system.
+     * @param sessionId - the Session the path belongs to.
+     * @param path - the absolute file path.
+     * @returns `{ ok: true, method, trashPath }` or `{ ok: false, code, message }`.
+     */
+    function postTrash(sessionId, path) {
+      return fetch('session-files/trash', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionId, path: path }),
+      }).then(function (response) {
+        return response.json().catch(function () { return null }).then(function (payload) {
+          if (response.ok && payload && payload.ok === true) return payload
+          if (payload && typeof payload === 'object') {
+            return { ok: false, code: textOf(payload.code), message: textOf(payload.message) }
+          }
+          return { ok: false, code: 'http-' + String(response.status), message: '' }
+        })
+      }).catch(function (error) {
+        return { ok: false, code: 'network', message: String(error && error.message ? error.message : error) }
+      })
+    }
+
     /* ------------------------------------------------------------------ */
     /* Icons                                                              */
     /* ------------------------------------------------------------------ */
@@ -377,6 +476,15 @@ window.__ModuleLoader__.load({
       ])
     }
 
+    function trashGlyph(size) {
+      return svgIcon(size, [
+        h('path', { key: 'lid', d: 'M4 7h16' }),
+        h('path', { key: 'tab', d: 'M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2' }),
+        h('path', { key: 'body', d: 'M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12' }),
+        h('path', { key: 'lines', d: 'M10 11v6M14 11v6' }),
+      ])
+    }
+
     function chevronGlyph(size) {
       return svgIcon(size, [h('path', { key: 'chevron', d: 'M9 6l6 6-6 6' })])
     }
@@ -406,6 +514,9 @@ window.__ModuleLoader__.load({
       '[data-session-files-row]:hover [data-session-files-action],' +
         '[data-session-files-row]:focus-within [data-session-files-action]{opacity:1}',
       '[data-session-files-action]:hover{background:' + TOKEN.pressed + '}',
+      '[data-session-files-action][data-danger]{color:' + TOKEN.labelTertiary + '}',
+      '[data-session-files-action][data-danger]:hover:not(:disabled){color:' + TOKEN.danger + '}',
+      '[data-session-files-dialog-card]{box-shadow:0 12px 40px rgba(0,0,0,0.24)}',
       '[data-session-files-action]:focus-visible{opacity:1;outline:2px solid ' + TOKEN.business + ';outline-offset:-2px}',
       '[data-session-files-scroll]{scrollbar-width:thin;scrollbar-color:transparent transparent}',
       '[data-session-files-scroll]:hover{scrollbar-color:' + TOKEN.borderL2 + ' transparent}',
@@ -550,6 +661,28 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The 28px icon button every row action shares.
+     * @param color - optional explicit color; the recycle action leaves it to CSS.
+     * @returns the inline style.
+     */
+    function actionButtonStyle(color) {
+      return {
+        width: 28,
+        height: 28,
+        flex: 'none',
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 7,
+        border: 'none',
+        background: 'transparent',
+        color: color,
+        cursor: 'pointer',
+        padding: 0,
+      }
+    }
+
+    /**
      * One row: extension chip, name and state badges, directory and turn, actions.
      * @param props - `{ entry, cwd, t, openFile, onCopy, onOpen }`.
      * @returns the row element.
@@ -557,6 +690,7 @@ window.__ModuleLoader__.load({
     function FileRow(props) {
       var entry = props.entry
       var t = props.t
+      var trashed = props.trashed === true
       var shown = relativeTo(entry.path, props.cwd)
       var target = shown === '' ? normalizePath(entry.path) : shown
       var parts = splitPath(target)
@@ -578,25 +712,29 @@ window.__ModuleLoader__.load({
         'div',
         {
           'data-session-files-row': '',
-          role: 'button',
-          tabIndex: 0,
+          'data-session-files-trashed': trashed ? '' : undefined,
+          role: trashed ? undefined : 'button',
+          tabIndex: trashed ? undefined : 0,
           title: entry.path,
-          'aria-label': t('row.open') + ': ' + name,
-          onClick: activate,
-          onKeyDown: function (event) {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault()
-              activate()
-            }
-          },
+          'aria-label': trashed ? t('row.trashed') + ': ' + name : t('row.open') + ': ' + name,
+          onClick: trashed ? undefined : activate,
+          onKeyDown: trashed
+            ? undefined
+            : function (event) {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  activate()
+                }
+              },
           style: {
             display: 'flex',
             alignItems: 'center',
             gap: 12,
             padding: '8px 10px',
             borderRadius: 9,
-            cursor: 'pointer',
+            cursor: trashed ? 'default' : 'pointer',
             minWidth: 0,
+            opacity: trashed ? 0.58 : 1,
           },
         },
         h(
@@ -695,35 +833,194 @@ window.__ModuleLoader__.load({
               )
             : null,
         ),
+        trashed
+          ? h(
+              'span',
+              {
+                style: {
+                  flex: 'none',
+                  fontSize: 10.5,
+                  lineHeight: '14px',
+                  color: TOKEN.labelCaption,
+                  whiteSpace: 'nowrap',
+                },
+              },
+              t('row.trashed'),
+            )
+          : h(
+              'button',
+              {
+                type: 'button',
+                'data-session-files-action': '',
+                'data-danger': 'true',
+                title: t('row.trash'),
+                'aria-label': t('row.trash') + ': ' + name,
+                onClick: function (event) {
+                  event.stopPropagation()
+                  props.onTrash(entry)
+                },
+                style: actionButtonStyle(),
+              },
+              trashGlyph(14),
+            ),
+        trashed
+          ? null
+          : h(
+              'button',
+              {
+                type: 'button',
+                'data-session-files-action': '',
+                title: t('row.copy'),
+                'aria-label': t('row.copy'),
+                onClick: function (event) {
+                  event.stopPropagation()
+                  props.onCopy(entry)
+                },
+                style: actionButtonStyle(TOKEN.labelTertiary),
+              },
+              copyGlyph(14),
+            ),
+        trashed
+          ? null
+          : h('span', { 'aria-hidden': true, style: { flex: 'none', color: TOKEN.labelCaption, display: 'inline-flex' } }, chevronGlyph(14)),
+      )
+    }
+
+    /**
+     * One dialog button.
+     * @param danger - the primary recycle action.
+     * @param disabled - a request is in flight.
+     * @returns the inline style.
+     */
+    function dialogButtonStyle(danger, disabled) {
+      return {
+        height: 30,
+        padding: '0 12px',
+        borderRadius: 8,
+        border: danger ? '1px solid ' + TOKEN.danger : '1px solid ' + TOKEN.borderL2,
+        background: danger ? TOKEN.danger : 'transparent',
+        color: danger ? '#ffffff' : TOKEN.labelSecondary,
+        opacity: disabled ? 0.6 : 1,
+        cursor: disabled ? 'default' : 'pointer',
+        fontSize: 12,
+        lineHeight: '18px',
+        fontFamily: FONT_STACK,
+      }
+    }
+
+    /**
+     * The confirmation step before a file is recycled: it names the exact path
+     * and explains where the bytes go, so a click is never a silent surprise.
+     * @param props - `{ t, entry, busy, onCancel, onConfirm }`.
+     * @returns the dialog element.
+     */
+    function TrashDialog(props) {
+      var t = props.t
+      var entry = props.entry
+      var busy = props.busy === true
+      var cancelRef = react.useRef(null)
+
+      react.useEffect(function () {
+        if (cancelRef.current !== null && typeof cancelRef.current.focus === 'function') cancelRef.current.focus()
+      }, [])
+
+      function onKeyDown(event) {
+        if (event.key === 'Escape') {
+          event.stopPropagation()
+          if (!busy) props.onCancel()
+        }
+      }
+
+      return h(
+        'div',
+        {
+          'data-session-files-dialog': '',
+          role: 'presentation',
+          onClick: function () {
+            if (!busy) props.onCancel()
+          },
+          onKeyDown: onKeyDown,
+          style: {
+            position: 'absolute',
+            inset: 0,
+            zIndex: 20,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: 24,
+            background: 'rgba(15, 15, 16, 0.34)',
+          },
+        },
         h(
-          'button',
+          'div',
           {
-            type: 'button',
-            'data-session-files-action': '',
-            title: t('row.copy'),
-            'aria-label': t('row.copy'),
-            onClick: function (event) {
-              event.stopPropagation()
-              props.onCopy(entry)
-            },
+            'data-session-files-dialog-card': '',
+            role: 'dialog',
+            'aria-modal': 'true',
+            'aria-labelledby': 'session-files-trash-title',
+            onClick: function (event) { event.stopPropagation() },
             style: {
-              width: 28,
-              height: 28,
-              flex: 'none',
-              display: 'inline-flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderRadius: 7,
-              border: 'none',
-              background: 'transparent',
-              color: TOKEN.labelTertiary,
-              cursor: 'pointer',
-              padding: 0,
+              width: '100%',
+              maxWidth: 420,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 12,
+              padding: '16px 18px',
+              borderRadius: 12,
+              border: '1px solid ' + TOKEN.borderL2,
+              background: TOKEN.bgLayer1,
             },
           },
-          copyGlyph(14),
+          h(
+            'div',
+            { id: 'session-files-trash-title', style: { fontSize: 14, fontWeight: 600, lineHeight: '20px', color: TOKEN.labelPrimary } },
+            t('trash.title'),
+          ),
+          h(
+            'div',
+            {
+              style: {
+                fontFamily: MONO_STACK,
+                fontSize: 11.5,
+                lineHeight: '16px',
+                color: TOKEN.labelSecondary,
+                background: TOKEN.bgLayer2,
+                border: '1px solid ' + TOKEN.borderL2,
+                borderRadius: 7,
+                padding: '6px 8px',
+                wordBreak: 'break-all',
+              },
+            },
+            entry.path,
+          ),
+          h('div', { style: { fontSize: 12, lineHeight: '18px', color: TOKEN.labelTertiary } }, t('trash.body')),
+          h(
+            'div',
+            { style: { display: 'flex', justifyContent: 'flex-end', gap: 8 } },
+            h(
+              'button',
+              {
+                ref: cancelRef,
+                type: 'button',
+                disabled: busy,
+                onClick: function () { props.onCancel() },
+                style: dialogButtonStyle(false, busy),
+              },
+              t('trash.cancel'),
+            ),
+            h(
+              'button',
+              {
+                type: 'button',
+                'data-danger': 'true',
+                disabled: busy,
+                onClick: function () { props.onConfirm() },
+                style: dialogButtonStyle(true, busy),
+              },
+              busy ? t('trash.busy') : t('trash.confirm'),
+            ),
+          ),
         ),
-        h('span', { 'aria-hidden': true, style: { flex: 'none', color: TOKEN.labelCaption, display: 'inline-flex' } }, chevronGlyph(14)),
       )
     }
 
@@ -817,6 +1114,23 @@ window.__ModuleLoader__.load({
       var projection = useProjection('sessionFiles')
       var files = projection && Array.isArray(projection.files) ? projection.files : []
       var cwd = projection && typeof projection.cwd === 'string' ? projection.cwd : ''
+      var sessionId = textOf(props.sessionId)
+
+      var trashedState = react.useState(function () { return loadTrashed(sessionId) })
+      var trashed = trashedState[0]
+      var setTrashed = trashedState[1]
+
+      var pendingState = react.useState(null)
+      var pending = pendingState[0]
+      var setPending = pendingState[1]
+
+      var busyState = react.useState(false)
+      var busy = busyState[0]
+      var setBusy = busyState[1]
+
+      react.useEffect(function () {
+        setTrashed(loadTrashed(sessionId))
+      }, [sessionId])
 
       var queryState = react.useState('')
       var query = queryState[0]
@@ -871,6 +1185,51 @@ window.__ModuleLoader__.load({
         var paths = files.map(function (entry) { return entry.path })
         if (copyText(paths.join('\n'))) report('ok', format(t, 'header.copied', { count: paths.length }))
         else report('error', t('notice.copyFailed'))
+      }
+
+      function askTrash(entry) {
+        setPending(entry)
+      }
+
+      function cancelTrash() {
+        if (!busy) setPending(null)
+      }
+
+      function markTrashed(entry) {
+        var key = trackedKey(cwd, entry.path)
+        setTrashed(function (previous) {
+          var next = new Set(previous)
+          next.add(key)
+          saveTrashed(sessionId, next)
+          return next
+        })
+      }
+
+      function confirmTrash() {
+        if (pending === null || busy) return
+        var entry = pending
+        setBusy(true)
+        postTrash(sessionId, entry.path).then(function (result) {
+          if (result.ok === true) {
+            markTrashed(entry)
+            if (result.method === 'quarantine') {
+              report('ok', format(t, 'trash.quarantined', { path: textOf(result.trashPath) || '?' }))
+            } else {
+              var name = splitPath(relativeTo(entry.path, cwd) || entry.path).name || entry.path
+              report('ok', format(t, 'trash.done', { name: name }))
+            }
+          } else if (result.code === 'missing') {
+            markTrashed(entry)
+            report('error', t('trash.missing'))
+          } else if (result.code === 'not-tracked') {
+            report('error', t('trash.notTracked'))
+          } else {
+            var message = textOf(result.message)
+            report('error', message === '' ? format(t, 'trash.failed', { message: textOf(result.code) || 'HTTP' }) : message)
+          }
+          setBusy(false)
+          setPending(null)
+        })
       }
 
       var filterChips = [
@@ -1015,11 +1374,22 @@ window.__ModuleLoader__.load({
                   entry: entry,
                   cwd: cwd,
                   t: t,
+                  trashed: trashed.has(trackedKey(cwd, entry.path)),
                   onCopy: copyEntry,
                   onOpen: openEntry,
+                  onTrash: askTrash,
                 })
               }),
         ),
+        pending !== null
+          ? h(TrashDialog, {
+              t: t,
+              entry: pending,
+              busy: busy,
+              onCancel: cancelTrash,
+              onConfirm: confirmTrash,
+            })
+          : null,
         notice !== null
           ? h(
               'div',
@@ -1120,6 +1490,8 @@ window.__ModuleLoader__.load({
       extensionOf: extensionOf,
       sessionFileAddress: sessionFileAddress,
       format: format,
+      trackedKey: trackedKey,
+      trashedStorageKey: trashedStorageKey,
     }
 
     return module.exports

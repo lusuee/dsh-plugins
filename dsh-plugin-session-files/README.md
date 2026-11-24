@@ -5,7 +5,8 @@ this conversation actually touch?**
 
 It adds a **Files** tab next to Chat and Trajectory. The tab lists every file the
 Session wrote, edited, or delivered, with search, state filters, per-file
-badges, and one-click opening in the right sidebar preview.
+badges, one-click opening in the right sidebar preview, and a **Recycle** action
+that moves a file to the trash without ever deleting it permanently.
 
 ## What is collected
 
@@ -30,6 +31,15 @@ across the Session, and tagged with the turn that last touched them.
 The built-in changed-files card has the same boundary: the Host can only name a
 file when a tool result proves it.
 
+## Recycling
+
+The trash button on a row asks the Host to move that file to the system recycle
+bin. The Host refuses any path the Session did not produce and any path that is
+not a regular file. When the recycle bin cannot be written, the file is moved to
+a same-volume `.trash/<timestamp>/` quarantine next to it, with a
+`.rm-safe-manifest.json` recording where it came from. Nothing is permanently
+deleted, and wildcard paths are refused.
+
 ## Usage
 
 1. Open a Session.
@@ -37,13 +47,15 @@ file when a tool result proves it.
 3. Search by name or path, filter by New / Edited / Delivered.
 4. Click a row to preview the file in the right sidebar.
 5. Use the copy button on a row (or **Copy all paths**) to grab paths.
+6. Use the trash button to recycle a file this Session produced; the row stays
+   listed, marked **Recycled**.
 
 ## Files
 
 ```
 package.json          package manifest (bundle + client entry)
 cordis.patch.yml      bundle patch that inserts the plugin
-lib/index.js          Host half: the `sessionFiles` Session projection
+lib/index.js          Host half: `sessionFiles` projection + recycle route
 lib/client.js         Browser half: the Files tab (`conversation.view`)
 locale/{en,zh}.json   display title, description, detail page
 docs/DETAIL*.md       user-facing documentation

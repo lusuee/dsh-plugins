@@ -1,3 +1,8 @@
+import { spawn } from 'node:child_process'
+import { existsSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
 /**
  * Host half of `dsh-plugin-session-files`.
  *
@@ -6,6 +11,10 @@
  * `sessionProjections` unit, so the Host owns the authoritative answer: it
  * replays the committed log, survives reconnects, and the browser only renders
  * what the Host published.
+ *
+ * The Host half also owns `POST /session-files/trash`, the one route the view's
+ * per-file recycle action posts to: a browser cannot delete a Host file on its
+ * own, and the route refuses any path this Session did not produce.
  *
  * Tracked inputs (the same three sources the built-in deliverables card uses):
  *
@@ -282,6 +291,319 @@ function withPresented(state, path, turn, seq, description) {
   return relisted({ ...state, files })
 }
 
+/* ------------------------------------------------------------------ */
+/* Recycle route                                                       */
+/* ------------------------------------------------------------------ */
+
+/** Exact route the browser half posts a confirmed recycle action to. */
+const TRASH_ROUTE = '/session-files/trash'
+
+/** A recycle request is two short strings; anything larger is hostile. */
+const MAX_BODY_BYTES = 8 * 1024
+
+/** One rm-safe run may take a moment; a stuck PowerShell must not hold the response. */
+const RM_SAFE_TIMEOUT_MS = 30_000
+
+/** PowerShell color escapes, stripped before parsing its report. */
+const ANSI_ESCAPE = /\u001b\[[0-9;]*m/g
+
+/**
+ * The newest folded state per Session. The recycle route uses it as the
+ * membership proof: a path can only be recycled when this Session is what
+ * produced it, so a crafted request cannot reach an arbitrary file.
+ */
+const sessionStates = new Map()
+
+/**
+ * Remember the newest state for the Session it belongs to.
+ * @param state - a state built by init or fold.
+ * @returns the same state, for expression position.
+ */
+function track(state) {
+  const sessionId = isRecord(state) ? textOf(state.sessionId) : ''
+  if (sessionId !== '') sessionStates.set(sessionId, state)
+  return state
+}
+
+/** @param ctx - plugin context. @returns the composition's connection fence, if any. */
+function connectionOf(ctx) {
+  return Reflect.get(ctx, 'connection')
+}
+
+/**
+ * Send one JSON response; no recycle outcome is cacheable.
+ * @param res - server response.
+ * @param status - HTTP status.
+ * @param payload - serializable body.
+ */
+function sendJson(res, status, payload) {
+  res.statusCode = status
+  res.setHeader('content-type', 'application/json; charset=utf-8')
+  res.setHeader('cache-control', 'no-store')
+  res.end(JSON.stringify(payload))
+}
+
+/**
+ * Refuse a request the connection service does not trust.
+ * @param ctx - plugin context.
+ * @param req - incoming request.
+ * @param res - server response.
+ * @returns true when it already answered with a refusal.
+ */
+function rejectedByConnection(ctx, req, res) {
+  const connection = connectionOf(ctx)
+  if (connection === undefined || connection === null || typeof connection.requestRejection !== 'function') {
+    // A recycle route without the trust fence must never answer: the service
+    // is injected, so this only guards a mis-composed Host.
+    res.statusCode = 403
+    res.end()
+    return true
+  }
+  const rejection = connection.requestRejection(req)
+  if (rejection === undefined) return false
+  res.statusCode = rejection
+  res.end()
+  return true
+}
+
+/**
+ * Collect a bounded request body as UTF-8 text; null past the ceiling, with
+ * the rest drained so the refusal is a readable response instead of a cut socket.
+ * @param req - incoming request.
+ * @returns the body text, or null when it is too large.
+ */
+async function readBoundedBody(req) {
+  const chunks = []
+  let size = 0
+  for await (const chunk of req) {
+    size += chunk.byteLength
+    if (size > MAX_BODY_BYTES) {
+      req.resume()
+      return null
+    }
+    chunks.push(chunk)
+  }
+  return Buffer.concat(chunks, size).toString('utf8')
+}
+
+/**
+ * PowerShell single-quoted literal; the only escape inside one is `''`.
+ * @param value - raw text.
+ * @returns the literal source.
+ */
+function psLiteral(value) {
+  return `'${String(value).replace(/'/g, "''")}'`
+}
+
+/**
+ * The encoded command that dot-sources rm-safe and recycles exactly one path.
+ * Encoding keeps a path containing quotes or spaces out of the shell grammar.
+ * @param script - absolute rm-safe.ps1 path.
+ * @param target - absolute file path.
+ * @returns UTF-16LE base64 for `-EncodedCommand`.
+ */
+function rmSafeCommand(script, target) {
+  return Buffer.from(`. ${psLiteral(script)}; rm-safe -Path ${psLiteral(target)}`, 'utf16le').toString('base64')
+}
+
+/**
+ * Run one PowerShell executable with an encoded command.
+ * @param executable - `pwsh.exe` or `powershell.exe`.
+ * @param encoded - UTF-16LE base64 command.
+ * @returns `{ code, stdout, stderr, error?, timedOut? }`.
+ */
+function runPowerShell(executable, encoded) {
+  return new Promise((resolve) => {
+    let child
+    try {
+      child = spawn(executable, ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded], { windowsHide: true })
+    } catch (error) {
+      resolve({ code: null, stdout: '', stderr: '', error })
+      return
+    }
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const finish = (outcome) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      resolve(outcome)
+    }
+    const timer = setTimeout(() => {
+      try {
+        child.kill()
+      } catch {
+        /* already exited */
+      }
+      finish({ code: null, stdout, stderr, timedOut: true })
+    }, RM_SAFE_TIMEOUT_MS)
+    if (child.stdout !== null) child.stdout.on('data', (chunk) => { stdout += chunk.toString() })
+    if (child.stderr !== null) child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
+    child.on('error', (error) => finish({ code: null, stdout, stderr, error }))
+    child.on('close', (code) => finish({ code, stdout, stderr }))
+  })
+}
+
+/**
+ * The last non-empty line of a report, for an error message.
+ * @param text - captured output.
+ * @returns the trimmed last line, or ''.
+ */
+function lastLine(text) {
+  const lines = String(text).split(/\r?\n/).map((line) => line.trim()).filter((line) => line !== '')
+  return lines.length === 0 ? '' : lines[lines.length - 1]
+}
+
+/**
+ * Recycle one file through rm-safe: the native Recycle Bin when the volume's
+ * bin is writable, otherwise a same-directory `.trash` quarantine. Both keep
+ * the bytes, so a mistaken click stays recoverable.
+ * @param target - the absolute, Session-tracked file path.
+ * @returns `{ ok: true, method, trashPath, detail }` or `{ ok: false, message }`.
+ */
+async function recycleThroughRmSafe(target) {
+  const script = process.env.DSH_RM_SAFE ?? join(homedir(), '.dsh', 'dsh-ops', 'rm-safe.ps1')
+  if (!existsSync(script)) return { ok: false, message: 'rm-safe.ps1 不存在：' + script }
+  const encoded = rmSafeCommand(script, target)
+  let run = await runPowerShell('pwsh.exe', encoded)
+  if (run.error !== undefined && run.error.code === 'ENOENT') run = await runPowerShell('powershell.exe', encoded)
+  if (run.timedOut === true) return { ok: false, message: 'rm-safe 超时未返回。' }
+  if (run.error !== undefined) return { ok: false, message: '无法启动 PowerShell：' + String(run.error.message ?? run.error) }
+  const stdout = String(run.stdout).replace(ANSI_ESCAPE, '')
+  const stderr = String(run.stderr).replace(ANSI_ESCAPE, '')
+  if (existsSync(target)) return { ok: false, message: lastLine(stderr) || lastLine(stdout) || '文件仍然存在，回收未完成。' }
+  const quarantined = /→\s*隔离区/.test(stdout)
+  const marker = /⇒\s*(.+)/.exec(stdout)
+  return {
+    ok: true,
+    method: quarantined ? 'quarantine' : 'recycle',
+    trashPath: marker === null ? '' : marker[1].trim(),
+    detail: lastLine(stdout),
+  }
+}
+
+/**
+ * Read one recycle-request body.
+ * @param body - raw UTF-8 JSON text.
+ * @returns `{ sessionId, path }`, or undefined when the shape is wrong.
+ */
+function parseTrashBody(body) {
+  let parsed
+  try {
+    parsed = JSON.parse(body)
+  } catch {
+    return undefined
+  }
+  if (!isRecord(parsed)) return undefined
+  if (typeof parsed.sessionId !== 'string' || parsed.sessionId === '') return undefined
+  if (typeof parsed.path !== 'string' || parsed.path === '') return undefined
+  return { sessionId: parsed.sessionId, path: parsed.path }
+}
+
+/**
+ * Answer POST /session-files/trash: prove the path is one this Session actually
+ * produced, then recycle the file through rm-safe. The browser never names a
+ * file the Host has not already folded, and only files are accepted.
+ * @param ctx - plugin context (for the connection trust fence).
+ * @returns the route handler.
+ */
+function createTrashHandler(ctx) {
+  return async function handleTrash(req, res) {
+    try {
+      if (rejectedByConnection(ctx, req, res)) return
+      if (req.method !== 'POST') {
+        res.statusCode = 405
+        res.setHeader('allow', 'POST')
+        res.end()
+        return
+      }
+      if (!/^application\/json\b/i.test(String(req.headers['content-type'] ?? ''))) {
+        sendJson(res, 415, { ok: false, code: 'unsupported-media-type', message: '请求体必须是 application/json。' })
+        return
+      }
+      const body = await readBoundedBody(req)
+      if (body === null) {
+        sendJson(res, 413, { ok: false, code: 'payload-too-large', message: '请求体过大。' })
+        return
+      }
+      const request = parseTrashBody(body)
+      if (request === undefined) {
+        sendJson(res, 400, { ok: false, code: 'bad-request', message: '需要 sessionId 与 path。' })
+        return
+      }
+      const state = sessionStates.get(request.sessionId)
+      if (state === undefined) {
+        sendJson(res, 404, { ok: false, code: 'unknown-session', message: 'Host 还没有折叠这个会话。' })
+        return
+      }
+      const normalized = normalizePath(request.path)
+      const key = state.foldCase ? normalized.toLowerCase() : normalized
+      const at = state.index[key]
+      if (at === undefined) {
+        sendJson(res, 403, { ok: false, code: 'not-tracked', message: '这个路径不在本会话的文件列表里。' })
+        return
+      }
+      const target = state.files[at].path
+      let info
+      try {
+        info = statSync(target)
+      } catch {
+        sendJson(res, 404, { ok: false, code: 'missing', message: '文件已经不存在了。' })
+        return
+      }
+      if (!info.isFile()) {
+        sendJson(res, 400, { ok: false, code: 'not-file', message: '只能回收文件，不能回收目录。' })
+        return
+      }
+      const outcome = await recycleThroughRmSafe(target)
+      if (outcome.ok !== true) {
+        sendJson(res, 502, { ok: false, code: 'rm-safe-failed', message: outcome.message })
+        return
+      }
+      sendJson(res, 200, { ok: true, path: target, method: outcome.method, trashPath: outcome.trashPath, detail: outcome.detail })
+    } catch (error) {
+      try {
+        sendJson(res, 500, { ok: false, code: 'internal', message: String(error && error.message ? error.message : error) })
+      } catch {
+        /* the socket may already be gone; nothing left to answer */
+      }
+    }
+  }
+}
+
+/**
+ * Register the recycle route on the composition's web server when it has one.
+ * @param ctx - plugin context.
+ * @returns the disposer, or a no-op when the route cannot be served.
+ */
+function registerTrashRoute(ctx) {
+  let server
+  try {
+    server = ctx.get('webServer')
+  } catch {
+    server = undefined
+  }
+  if (server === undefined || server === null || typeof server.register !== 'function') {
+    warn(ctx, 'session-files: 没有 webServer，回收按钮不可用')
+    return () => {}
+  }
+  return server.register({ kind: 'exact', path: TRASH_ROUTE, handler: createTrashHandler(ctx) })
+}
+
+/**
+ * Log one plugin warning without letting a missing logger break the plugin.
+ * @param ctx - plugin context.
+ * @param message - the warning text.
+ */
+function warn(ctx, message) {
+  try {
+    if (ctx.logger !== undefined && typeof ctx.logger.warn === 'function') ctx.logger.warn(message)
+  } catch {
+    /* a logger that throws is not worth the plugin */
+  }
+}
+
 /** The client-visible projection definition. */
 const DEFINITION = {
   key: KEY,
@@ -293,9 +615,10 @@ const DEFINITION = {
    * @returns the initial fold state.
    */
   init(header) {
+    const sessionId = textOf(header?.id)
     const cwd = normalizePath(textOf(header?.cwd))
     const files = []
-    return { cwd, foldCase: foldsCase(cwd), files, calls: {}, index: {}, view: { cwd, files } }
+    return track({ sessionId, cwd, foldCase: foldsCase(cwd), files, calls: {}, index: {}, view: { cwd, files } })
   },
   /**
    * Fold one committed event. Every unrelated event returns the same state
@@ -304,7 +627,7 @@ const DEFINITION = {
    * @param event - one committed Session event.
    * @returns the next state.
    */
-  apply(state, event) {
+  fold(state, event) {
     if (!isRecord(event) || !isRecord(event.data)) return state
     if (event.type === 'tool/call') {
       const data = event.data
@@ -346,6 +669,16 @@ const DEFINITION = {
     }
     return state
   },
+  /**
+   * Fold one event for the registry, remembering the Session's newest state so
+   * the recycle route can prove that a path belongs to the Session asking.
+   * @param state - current fold state.
+   * @param event - one committed Session event.
+   * @returns the next state.
+   */
+  apply(state, event) {
+    return track(DEFINITION.fold(state, event))
+  },
   wire: {
     viewSchema: PASS_THROUGH,
     view(state) {
@@ -356,8 +689,13 @@ const DEFINITION = {
   },
 }
 
-/** Host plugin body: register the fold on the calling fiber. */
-export const inject = ['sessionProjections']
+/**
+ * Host plugin body: register the fold on the calling fiber. `webServer` and
+ * `connection` are required because the recycle route is part of the plugin's
+ * contract: the route must exist, and it must be behind the same trust fence
+ * every other browser-facing route uses.
+ */
+export const inject = ['sessionProjections', 'webServer', 'connection']
 
 /**
  * @param ctx - Host context carrying the projection registry.
@@ -384,7 +722,24 @@ export function apply(ctx) {
     }
     return registration
   }, 'session-files: projection')
+
+  ctx.effect(() => {
+    try {
+      return registerTrashRoute(ctx)
+    } catch (error) {
+      warn(ctx, 'session-files: 回收路由注册失败：' + String(error))
+      return () => {}
+    }
+  }, 'session-files: trash route')
 }
 
 /** Test seam: the fold definition, so the offline harness can drive it without a Host. */
 export const __definition = DEFINITION
+
+/** Test seam: the recycle route, its handler factory, and the Session state registry. */
+export const __trashRoute = {
+  path: TRASH_ROUTE,
+  createHandler: createTrashHandler,
+  sessions: sessionStates,
+  command: rmSafeCommand,
+}

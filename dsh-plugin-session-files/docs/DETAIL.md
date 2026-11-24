@@ -40,6 +40,24 @@ Rows are ordered by most recent touch. The extension chip on the left is colored
 by file family (code, documents, images, data), which makes large lists faster to
 scan.
 
+## Recycling a file
+
+The trash button on a row asks the Host to move the file to the system recycle
+bin. The request is checked against the Session's own file index, so the button
+cannot reach a path this conversation never produced, and the target must be a
+regular file — directories and missing files are refused before anything moves.
+
+If the recycle bin cannot be written, the file is renamed into a same-volume
+`.trash/<timestamp>/` directory next to it, and a `.rm-safe-manifest.json` records
+the original path, time, and reason. That fallback exists because DSH runs tool
+processes at low integrity on Windows, where the recycle bin can silently refuse
+the move; the plugin never degrades into a permanent delete.
+
+After a successful recycle the row stays in the list — the event log still
+mentions the file — but this browser tab marks it **Recycled** and stops opening
+it. The mark lives in the tab's session storage, so a reload keeps it while a
+different browser tab still sees the file as before.
+
 ## Boundaries
 
 The list is intentionally limited to files a tool result can prove:
@@ -77,4 +95,6 @@ preview behaves exactly like a file link in the transcript.
 
 Built for DSH `>=0.2.1-rc.3`, Web GUI only. If the sidebar service is missing,
 the list still works and clicking a row shows a short message instead of opening
-a preview.
+a preview. Host code is loaded once per app start, so updating the plugin
+requires restarting the desktop app; the browser half picks up changes on a page
+reload.
