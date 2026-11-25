@@ -97,18 +97,18 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          background: rgba(0, 0, 0, 0.48);
+          background: rgba(0, 0, 0, 0.52);
           backdrop-filter: blur(4px);
           animation: dsh-tp-modalFadeIn 0.15s ease-out;
         }
         .dsh-tp-dialog {
-          width: 580px;
+          width: 600px;
           max-width: 92vw;
           max-height: 85vh;
           border-radius: 12px;
           background: var(--dsw-alias-bg-floating, #1c1c1f);
           border: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.22));
-          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+          box-shadow: 0 16px 40px rgba(0, 0, 0, 0.38);
           display: flex;
           flex-direction: column;
           overflow: hidden;
@@ -383,9 +383,9 @@
         return String(num)
       }
 
-      function TokenStatsModal({ isOpen, onClose, sessionData, globalData }) {
+      function TokenStatsModal({ isOpen, onClose, sessionData, globalData, onRefreshGlobal }) {
         const [tab, setTab] = React.useState('session')
-        const [globalRange, setGlobalRange] = React.useState('week') // 'today' | 'week' | 'month'
+        const [globalRange, setGlobalRange] = React.useState('week')
         const [copied, setCopied] = React.useState(false)
 
         React.useEffect(() => {
@@ -413,7 +413,6 @@
         const rangeLabel =
           globalRange === 'today' ? '今日' : globalRange === 'week' ? '最近 7 天 (周)' : '最近 30 天 (月)'
 
-        // Report text for copying
         const getReportText = () => {
           if (tab === 'session') {
             return [
@@ -591,6 +590,57 @@
                             ]),
                           ])
                         : null,
+                    ]
+                  : globalData === null
+                  ? [
+                      // Friendly hint if backend route is not reachable yet
+                      h(
+                        'div',
+                        {
+                          key: 'loading-state',
+                          style: {
+                            padding: '36px 20px',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            textAlign: 'center',
+                            gap: '12px',
+                          },
+                        },
+                        [
+                          h('div', { key: 'i', style: { fontSize: '32px' } }, '📊'),
+                          h(
+                            'div',
+                            { key: 't', style: { fontSize: '13.5px', fontWeight: 650 } },
+                            '全局历史统计服务加载中',
+                          ),
+                          h(
+                            'div',
+                            {
+                              key: 'd',
+                              style: {
+                                fontSize: '11.5px',
+                                color: 'var(--dsw-alias-label-secondary, #8e8e93)',
+                                maxWidth: '380px',
+                                lineHeight: 1.6,
+                              },
+                            },
+                            '由于插件新增了后台全局聚合路由，需要完全退出 DeepSeek Harness 客户端并重新启动软件才能生效（仅按 Ctrl+R 只会重载界面，不会加载后端新增路由）。',
+                          ),
+                          h(
+                            'button',
+                            {
+                              key: 'retry',
+                              type: 'button',
+                              className: 'dsh-tp-btn',
+                              style: { marginTop: '8px', padding: '5px 16px' },
+                              onClick: onRefreshGlobal,
+                            },
+                            '重试刷新连接',
+                          ),
+                        ],
+                      ),
                     ]
                   : [
                       // Global Subtabs
@@ -781,7 +831,11 @@
         const [globalData, setGlobalData] = React.useState(null)
 
         const fetchGlobalStats = React.useCallback(() => {
-          fetch(STATS_ROUTE)
+          const url =
+            typeof document !== 'undefined'
+              ? new URL(STATS_ROUTE, document.baseURI).href
+              : STATS_ROUTE
+          fetch(url, { headers: { accept: 'application/json' }, cache: 'no-store' })
             .then((r) => (r.ok ? r.json() : null))
             .then((d) => {
               if (d && d.ok) setGlobalData(d)
@@ -870,6 +924,7 @@
               onClose: () => setModalOpen(false),
               sessionData,
               globalData,
+              onRefreshGlobal: fetchGlobalStats,
             }),
           ])
         }
@@ -919,6 +974,7 @@
             onClose: () => setModalOpen(false),
             sessionData,
             globalData,
+            onRefreshGlobal: fetchGlobalStats,
           }),
         ])
       }
