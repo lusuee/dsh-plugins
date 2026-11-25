@@ -3,6 +3,9 @@ node_modules/
 dist/
 *.tsbuildinfo
 
+# 本地链接补丁
+dsh-agy-link/
+
 # OS / editor 噪声
 .DS_Store
 Thumbs.db
