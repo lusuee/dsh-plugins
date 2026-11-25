@@ -3,8 +3,8 @@
 // A minimal pill in the composer toolbar + session header:
 //   [ ⚡ 38.2k · 缓 96% ]
 // Clicking it opens the Token 用量分析 panel:
-//   - 当前会话：总量构成（输出 / 未缓存输入 / 缓存读取）、命中率、最近一轮、效率
-//   - 全局统计：今日 / 近 7 天 / 近 30 天、每日走势条形图、活跃会话 TOP 5
+//   - 当前会话：总量构成（输出 / 未缓存输入 / 缓存读取）、命中率、最近一轮、交互效率
+//   - 全局趋势：今日 / 近 7 天 / 近 30 天、每日走势条形图、活跃会话 TOP 5
 //   - 一键复制当前视图为文本报告
 
 ;(function (root) {
@@ -21,9 +21,6 @@
       const React = require('react')
       const h = React.createElement
 
-      // 面板必须挂到 document.body。Slots 文档对 conversation.input.* 明确要求：
-      // "fixed overlays must portal to the document body because the docked composer contains them"。
-      // 输入区会为 position:fixed 建立包含块，就地渲染的结果是被裁进那一条输入栏里。
       let reactDom = null
       try {
         reactDom = require('react-dom')
@@ -45,14 +42,10 @@
       const STATS_ROUTE = '/__dsh-token-pill/stats'
       const STYLE_ID = 'dsh-token-pill-style'
 
-      // 语义色：输出=蓝、未缓存输入=橙、缓存读取=绿
-      // 语义色：输出=蓝、未缓存输入=橙、缓存读取=绿（按亮/暗主题给值，见 --dsh-tp-*）
       const C_OUT = 'var(--dsh-tp-out)'
       const C_IN = 'var(--dsh-tp-in)'
       const C_CACHE = 'var(--dsh-tp-cache)'
 
-      // 宿主主题：解析一个宿主背景令牌的亮度即可判定亮色/暗色，
-      // 因为宿主那 14 个 alias 令牌都是 requiresLightAndDark（同一名字、两套取值）。
       function parseCssColor(text) {
         const raw = String(text === null || text === undefined ? '' : text).trim()
         if (!raw) return null
@@ -97,20 +90,15 @@
               }
             }
           }
-        } catch {
-          /* 探测失败就走下面的兜底 */
-        }
+        } catch {}
         try {
           if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
             return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
           }
-        } catch {
-          /* 兜底也失败就用亮色 */
-        }
+        } catch {}
         return 'light'
       }
 
-      // 必须在组件里所有 return 之前调用（hook）。
       function useHostTheme() {
         const [theme, setTheme] = React.useState(detectHostTheme)
         React.useEffect(() => {
@@ -140,74 +128,61 @@
             media = null
           }
           return () => {
-            try {
-              if (observer) observer.disconnect()
-            } catch {
-              /* ignore */
-            }
-            try {
-              if (media && typeof media.removeEventListener === 'function') media.removeEventListener('change', sync)
-            } catch {
-              /* ignore */
-            }
+            try { if (observer) observer.disconnect() } catch {}
+            try { if (media && typeof media.removeEventListener === 'function') media.removeEventListener('change', sync) } catch {}
           }
         }, [])
         return theme
       }
 
       const STYLE = `
-        /* ===== 主题令牌 =====
-           宿主只提供下面这些 alias 令牌（--dsw-alias-bg-overlay / bg-layer-1 /
-           bg-layer-2 / border-l1 / border-l2 / label-primary / label-secondary /
-           brand-primary / state-*），亮暗暗色由宿主自己切换。所以这里只把
-           宿主令牌映射到 --dsh-tp-*，本插件独有的语义色（输出/输入/缓存、
-           轨道、遮罩、阴影）按亮暗两套给值，通过 data-dsh-tp-theme 切换。 */
+        /* ===== 主题令牌 ===== */
         .dsh-tp-scope {
           --dsh-tp-surface: var(--dsw-alias-bg-overlay, #ffffff);
-          --dsh-tp-surface-2: var(--dsw-alias-bg-layer-1, #f5f6f8);
-          --dsh-tp-surface-3: var(--dsw-alias-bg-layer-2, #eceef2);
-          --dsh-tp-border: var(--dsw-alias-border-l1, rgba(16, 20, 28, 0.12));
-          --dsh-tp-border-strong: var(--dsw-alias-border-l2, rgba(16, 20, 28, 0.22));
-          --dsh-tp-fg: var(--dsw-alias-label-primary, #16181d);
-          --dsh-tp-fg-dim: var(--dsw-alias-label-secondary, #575c66);
-          --dsh-tp-brand: var(--dsw-alias-brand-primary, #2f6fe0);
-          --dsh-tp-track: rgba(16, 20, 28, 0.1);
-          --dsh-tp-hover: rgba(16, 20, 28, 0.06);
-          --dsh-tp-out: #2f6fe0;
-          --dsh-tp-in: #a9630d;
-          --dsh-tp-cache: #0c7f5b;
-          --dsh-tp-out-soft: rgba(47, 111, 224, 0.16);
-          --dsh-tp-out-weak: rgba(47, 111, 224, 0.55);
-          --dsh-tp-out-tint: rgba(47, 111, 224, 0.08);
-          --dsh-tp-scrim: rgba(16, 20, 28, 0.42);
-          --dsh-tp-shadow: 0 20px 50px rgba(16, 20, 28, 0.18), 0 2px 8px rgba(16, 20, 28, 0.1);
+          --dsh-tp-surface-2: var(--dsw-alias-bg-layer-1, #f8f9fb);
+          --dsh-tp-surface-3: var(--dsw-alias-bg-layer-2, #edeff3);
+          --dsh-tp-border: var(--dsw-alias-border-l1, rgba(16, 24, 40, 0.08));
+          --dsh-tp-border-strong: var(--dsw-alias-border-l2, rgba(16, 24, 40, 0.16));
+          --dsh-tp-fg: var(--dsw-alias-label-primary, #111827);
+          --dsh-tp-fg-dim: var(--dsw-alias-label-secondary, #6b7280);
+          --dsh-tp-brand: var(--dsw-alias-brand-primary, #2563eb);
+          --dsh-tp-track: rgba(16, 24, 40, 0.08);
+          --dsh-tp-hover: rgba(16, 24, 40, 0.05);
+          --dsh-tp-out: #2563eb;
+          --dsh-tp-in: #d97706;
+          --dsh-tp-cache: #059669;
+          --dsh-tp-out-soft: rgba(37, 99, 235, 0.12);
+          --dsh-tp-out-weak: rgba(37, 99, 235, 0.5);
+          --dsh-tp-out-tint: rgba(37, 99, 235, 0.06);
+          --dsh-tp-scrim: rgba(15, 23, 42, 0.46);
+          --dsh-tp-shadow: 0 24px 48px -12px rgba(15, 23, 42, 0.18), 0 0 0 1px rgba(15, 23, 42, 0.08);
           --dsh-tp-on-brand: #ffffff;
           color-scheme: light;
         }
         .dsh-tp-scope[data-dsh-tp-theme='dark'] {
-          --dsh-tp-surface: var(--dsw-alias-bg-overlay, #232529);
-          --dsh-tp-surface-2: var(--dsw-alias-bg-layer-1, #26282e);
-          --dsh-tp-surface-3: var(--dsw-alias-bg-layer-2, #2e3138);
-          --dsh-tp-border: var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.14));
-          --dsh-tp-border-strong: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.26));
-          --dsh-tp-fg: var(--dsw-alias-label-primary, #f2f3f5);
-          --dsh-tp-fg-dim: var(--dsw-alias-label-secondary, #a9aeb9);
-          --dsh-tp-brand: var(--dsw-alias-brand-primary, #7aa7ff);
-          --dsh-tp-track: rgba(255, 255, 255, 0.14);
-          --dsh-tp-hover: rgba(255, 255, 255, 0.08);
-          --dsh-tp-out: #82abff;
-          --dsh-tp-in: #eab948;
-          --dsh-tp-cache: #3ed3a3;
-          --dsh-tp-out-soft: rgba(130, 171, 255, 0.2);
-          --dsh-tp-out-weak: rgba(130, 171, 255, 0.6);
-          --dsh-tp-out-tint: rgba(130, 171, 255, 0.12);
-          --dsh-tp-scrim: rgba(4, 6, 10, 0.62);
-          --dsh-tp-shadow: 0 20px 50px rgba(0, 0, 0, 0.52), 0 2px 8px rgba(0, 0, 0, 0.36);
-          --dsh-tp-on-brand: #0b1220;
+          --dsh-tp-surface: var(--dsw-alias-bg-overlay, #1c1d22);
+          --dsh-tp-surface-2: var(--dsw-alias-bg-layer-1, #25272e);
+          --dsh-tp-surface-3: var(--dsw-alias-bg-layer-2, #2f323b);
+          --dsh-tp-border: var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.09));
+          --dsh-tp-border-strong: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.16));
+          --dsh-tp-fg: var(--dsw-alias-label-primary, #f3f4f6);
+          --dsh-tp-fg-dim: var(--dsw-alias-label-secondary, #9ca3af);
+          --dsh-tp-brand: var(--dsw-alias-brand-primary, #60a5fa);
+          --dsh-tp-track: rgba(255, 255, 255, 0.12);
+          --dsh-tp-hover: rgba(255, 255, 255, 0.06);
+          --dsh-tp-out: #60a5fa;
+          --dsh-tp-in: #fbbf24;
+          --dsh-tp-cache: #34d399;
+          --dsh-tp-out-soft: rgba(96, 165, 250, 0.18);
+          --dsh-tp-out-weak: rgba(96, 165, 250, 0.55);
+          --dsh-tp-out-tint: rgba(96, 165, 250, 0.1);
+          --dsh-tp-scrim: rgba(0, 0, 0, 0.65);
+          --dsh-tp-shadow: 0 24px 50px -12px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.08);
+          --dsh-tp-on-brand: #0f172a;
           color-scheme: dark;
         }
 
-        /* ===== 胶囊 ===== */
+        /* ===== 胶囊按钮 ===== */
         .dsh-tp-group {
           display: inline-flex;
           align-items: center;
@@ -217,9 +192,9 @@
         .dsh-tp-btn {
           display: inline-flex;
           align-items: center;
-          gap: 4px;
+          gap: 5px;
           height: 24px;
-          padding: 0 8px;
+          padding: 0 9px;
           border-radius: 9999px;
           border: 1px solid var(--dsh-tp-border);
           background: var(--dsh-tp-hover);
@@ -241,7 +216,7 @@
           transform: translateY(-0.5px);
         }
         .dsh-tp-btn:active { transform: translateY(0); }
-        .dsh-tp-btn-empty { opacity: 0.72; }
+        .dsh-tp-btn-empty { opacity: 0.75; }
         .dsh-tp-btn-empty:hover { opacity: 1; }
         .dsh-tp-icon {
           font-size: 11px;
@@ -262,8 +237,7 @@
           font-weight: 600;
         }
 
-        /* ===== 面板骨架 =====
-           整块由 portal 挂到 document.body：祖先不再有包含块/裁剪，尺寸用确定值。 */
+        /* ===== 弹窗骨架 ===== */
         .dsh-tp-overlay {
           position: fixed;
           inset: 0;
@@ -271,18 +245,18 @@
           display: flex;
           align-items: center;
           justify-content: center;
-          padding: 24px 16px;
+          padding: 20px 16px;
           background: var(--dsh-tp-scrim);
           box-sizing: border-box;
           pointer-events: auto;
-          animation: dsh-tp-fade 0.14s ease-out;
+          backdrop-filter: blur(2px);
+          animation: dsh-tp-fade 0.15s ease-out;
         }
         .dsh-tp-dialog {
-          width: min(700px, 100%);
-          max-width: 100%;
-          max-height: min(84vh, 720px);
+          width: min(560px, 95vw);
+          max-height: min(82vh, 660px);
           min-height: 0;
-          border-radius: 14px;
+          border-radius: 12px;
           background: var(--dsh-tp-surface);
           border: 1px solid var(--dsh-tp-border-strong);
           box-shadow: var(--dsh-tp-shadow);
@@ -293,27 +267,27 @@
           font: inherit;
           font-size: 12.5px;
           box-sizing: border-box;
-          animation: dsh-tp-pop 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+          animation: dsh-tp-pop 0.18s cubic-bezier(0.16, 1, 0.3, 1);
         }
         @keyframes dsh-tp-fade { from { opacity: 0; } to { opacity: 1; } }
         @keyframes dsh-tp-pop {
-          from { opacity: 0; transform: scale(0.975) translateY(6px); }
+          from { opacity: 0; transform: scale(0.97) translateY(8px); }
           to { opacity: 1; transform: scale(1) translateY(0); }
         }
 
-        /* ===== 顶部 ===== */
+        /* ===== 头部 ===== */
         .dsh-tp-head {
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 13px 16px 11px;
+          padding: 12px 16px 10px;
           flex: 0 0 auto;
         }
         .dsh-tp-badge {
           width: 26px;
           height: 26px;
           flex: 0 0 auto;
-          border-radius: 8px;
+          border-radius: 7px;
           display: flex;
           align-items: center;
           justify-content: center;
@@ -321,21 +295,30 @@
           background: var(--dsh-tp-out-soft);
           color: var(--dsh-tp-brand);
         }
-        .dsh-tp-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+        .dsh-tp-head-text {
+          display: flex;
+          align-items: baseline;
+          gap: 8px;
+          min-width: 0;
+          flex: 1 1 auto;
+          overflow: hidden;
+        }
         .dsh-tp-head-title {
           font-size: 13.5px;
           font-weight: 700;
           letter-spacing: 0.01em;
-          line-height: 1.3;
           color: var(--dsh-tp-fg);
+          white-space: nowrap;
         }
         .dsh-tp-head-sub {
           font-size: 11px;
           color: var(--dsh-tp-fg-dim);
-          line-height: 1.3;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
+          padding: 1px 6px;
+          border-radius: 4px;
+          background: var(--dsh-tp-hover);
         }
         .dsh-tp-icon-btn {
           width: 26px;
@@ -350,38 +333,43 @@
           background: transparent;
           color: var(--dsh-tp-fg-dim);
           font-size: 13px;
-          line-height: 1;
           cursor: pointer;
-          transition: background 0.14s, color 0.14s, border-color 0.14s;
+          transition: background 0.14s, color 0.14s;
         }
         .dsh-tp-icon-btn:hover {
           background: var(--dsh-tp-hover);
-          border-color: var(--dsh-tp-border);
           color: var(--dsh-tp-fg);
         }
 
-        /* ===== 分段控件（页签 / 时间范围） ===== */
-        .dsh-tp-seg-wrap { padding: 0 16px; flex: 0 0 auto; }
+        /* ===== 顶部导航栏（标签页与筛选） ===== */
+        .dsh-tp-nav {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          padding: 0 16px 10px;
+          flex: 0 0 auto;
+          border-bottom: 1px solid var(--dsh-tp-border);
+        }
         .dsh-tp-seg {
           display: inline-flex;
           align-items: center;
           gap: 2px;
-          padding: 2px;
-          border-radius: 8px;
+          padding: 2.5px;
+          border-radius: 7px;
           background: var(--dsh-tp-surface-3);
-          border: 1px solid var(--dsh-tp-border);
           box-sizing: border-box;
         }
         .dsh-tp-seg-item {
-          padding: 4px 12px;
+          padding: 3.5px 11px;
           border: 0;
-          border-radius: 6px;
+          border-radius: 5px;
           background: transparent;
           color: var(--dsh-tp-fg-dim);
           font: inherit;
           font-size: 11.5px;
           font-weight: 600;
-          line-height: 1.4;
+          line-height: 1.35;
           cursor: pointer;
           white-space: nowrap;
           transition: background 0.14s, color 0.14s, box-shadow 0.14s;
@@ -390,28 +378,27 @@
         .dsh-tp-seg-item-on {
           background: var(--dsh-tp-surface);
           color: var(--dsh-tp-fg);
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
         }
 
-        /* ===== 内容区 ===== */
+        /* ===== 内容主体 ===== */
         .dsh-tp-body {
           flex: 1 1 auto;
           min-height: 0;
           overflow-y: auto;
           overscroll-behavior: contain;
-          padding: 14px 16px 16px;
+          padding: 14px 16px;
           display: flex;
           flex-direction: column;
-          gap: 14px;
+          gap: 12px;
         }
-        .dsh-tp-body::-webkit-scrollbar { width: 8px; }
+        .dsh-tp-body::-webkit-scrollbar { width: 6px; }
         .dsh-tp-body::-webkit-scrollbar-thumb {
           background: var(--dsh-tp-track);
-          border-radius: 4px;
+          border-radius: 3px;
         }
-        .dsh-tp-body::-webkit-scrollbar-track { background: transparent; }
 
-        /* ===== 主数字卡 ===== */
+        /* ===== 主消耗 Hero 卡片 ===== */
         .dsh-tp-hero {
           padding: 13px 14px;
           border-radius: 10px;
@@ -421,20 +408,31 @@
           flex-direction: column;
           gap: 10px;
         }
+        .dsh-tp-hero-header {
+          display: flex;
+          align-items: baseline;
+          justify-content: space-between;
+          gap: 8px;
+        }
         .dsh-tp-hero-label {
           font-size: 11px;
           font-weight: 600;
           letter-spacing: 0.02em;
           color: var(--dsh-tp-fg-dim);
         }
-        .dsh-tp-hero-row {
+        .dsh-tp-hero-exact {
+          font-size: 11px;
+          color: var(--dsh-tp-fg-dim);
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
+        }
+        .dsh-tp-hero-num {
           display: flex;
           align-items: baseline;
-          gap: 8px;
-          flex-wrap: wrap;
+          gap: 6px;
         }
         .dsh-tp-hero-val {
-          font-size: 27px;
+          font-size: 28px;
           font-weight: 750;
           line-height: 1.1;
           letter-spacing: -0.01em;
@@ -442,33 +440,26 @@
           color: var(--dsh-tp-fg);
         }
         .dsh-tp-hero-unit {
-          font-size: 12px;
+          font-size: 12.5px;
           font-weight: 600;
           color: var(--dsh-tp-fg-dim);
         }
-        .dsh-tp-hero-exact {
-          margin-left: auto;
-          font-size: 11px;
-          color: var(--dsh-tp-fg-dim);
-          font-variant-numeric: tabular-nums;
-          white-space: nowrap;
-        }
 
-        /* 构成条 */
+        /* 构成进度条 */
         .dsh-tp-comp-track {
           display: flex;
           width: 100%;
-          height: 9px;
-          border-radius: 5px;
+          height: 8px;
+          border-radius: 4px;
           overflow: hidden;
           background: var(--dsh-tp-track);
         }
         .dsh-tp-comp-seg { height: 100%; transition: width 0.28s ease; }
-        .dsh-tp-comp-seg + .dsh-tp-comp-seg { box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.16); }
+        .dsh-tp-comp-seg + .dsh-tp-comp-seg { box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.15); }
         .dsh-tp-legend {
           display: flex;
           align-items: center;
-          gap: 16px;
+          gap: 14px;
           flex-wrap: wrap;
         }
         .dsh-tp-legend-item {
@@ -480,8 +471,8 @@
           line-height: 1.4;
         }
         .dsh-tp-dot {
-          width: 8px;
-          height: 8px;
+          width: 7px;
+          height: 7px;
           flex: 0 0 auto;
           border-radius: 2px;
         }
@@ -492,22 +483,19 @@
         }
         .dsh-tp-legend-pct {
           color: var(--dsh-tp-fg-dim);
-          font-weight: 600;
+          font-weight: 550;
           font-variant-numeric: tabular-nums;
         }
 
-        /* ===== 指标网格 ===== */
-        .dsh-tp-grid {
+        /* ===== 核心指标三列卡片（无冗余） ===== */
+        .dsh-tp-grid-3 {
           display: grid;
-          grid-template-columns: repeat(4, minmax(0, 1fr));
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 8px;
         }
-        @media (max-width: 560px) {
-          .dsh-tp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        }
         .dsh-tp-tile {
-          padding: 9px 11px;
-          border-radius: 8px;
+          padding: 10px 12px;
+          border-radius: 9px;
           background: var(--dsh-tp-surface-2);
           border: 1px solid var(--dsh-tp-border);
           display: flex;
@@ -525,14 +513,14 @@
         }
         .dsh-tp-tile-val {
           font-size: 16px;
-          font-weight: 720;
-          line-height: 1.2;
+          font-weight: 700;
+          line-height: 1.25;
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
           color: var(--dsh-tp-fg);
         }
         .dsh-tp-tile-sub {
-          font-size: 10px;
+          font-size: 10.5px;
           color: var(--dsh-tp-fg-dim);
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
@@ -540,7 +528,47 @@
           text-overflow: ellipsis;
         }
 
-        /* ===== 分区 ===== */
+        /* ===== 最近一轮高光条 ===== */
+        .dsh-tp-last-card {
+          padding: 9px 12px;
+          border-radius: 8px;
+          background: var(--dsh-tp-surface-2);
+          border: 1px solid var(--dsh-tp-border);
+          display: flex;
+          flex-direction: column;
+          gap: 6px;
+        }
+        .dsh-tp-last-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          font-size: 11px;
+          color: var(--dsh-tp-fg-dim);
+        }
+        .dsh-tp-last-title {
+          font-weight: 650;
+          color: var(--dsh-tp-fg);
+        }
+        .dsh-tp-last-chips {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          flex-wrap: wrap;
+        }
+        .dsh-tp-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          padding: 3px 7px;
+          border-radius: 5px;
+          background: var(--dsh-tp-surface-3);
+          font-size: 10.5px;
+          font-variant-numeric: tabular-nums;
+          color: var(--dsh-tp-fg);
+        }
+        .dsh-tp-chip-dim { color: var(--dsh-tp-fg-dim); }
+
+        /* ===== 分区（每日走势 / 排行） ===== */
         .dsh-tp-sec { display: flex; flex-direction: column; gap: 7px; }
         .dsh-tp-sec-head {
           display: flex;
@@ -560,28 +588,23 @@
           font-variant-numeric: tabular-nums;
         }
 
-        /* ===== 走势条 ===== */
+        /* 每日走势条形表 */
         .dsh-tp-trend {
           display: flex;
           flex-direction: column;
-          gap: 1px;
-          max-height: 244px;
+          gap: 2px;
+          max-height: 200px;
           overflow-y: auto;
           overscroll-behavior: contain;
           padding-right: 2px;
         }
-        .dsh-tp-trend::-webkit-scrollbar { width: 6px; }
-        .dsh-tp-trend::-webkit-scrollbar-thumb {
-          background: var(--dsh-tp-track);
-          border-radius: 3px;
-        }
         .dsh-tp-trend-row {
           display: grid;
-          grid-template-columns: 86px minmax(0, 1fr) 66px 46px;
+          grid-template-columns: 82px minmax(0, 1fr) 68px 46px;
           align-items: center;
           gap: 8px;
           padding: 4px 6px;
-          border-radius: 6px;
+          border-radius: 5px;
           transition: background 0.12s;
         }
         .dsh-tp-trend-row:hover { background: var(--dsh-tp-hover); }
@@ -591,8 +614,6 @@
           color: var(--dsh-tp-fg-dim);
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
         }
         .dsh-tp-trend-date-today {
           color: var(--dsh-tp-brand);
@@ -600,15 +621,15 @@
         }
         .dsh-tp-track {
           position: relative;
-          height: 8px;
-          border-radius: 4px;
+          height: 6px;
+          border-radius: 3px;
           background: var(--dsh-tp-track);
           overflow: hidden;
         }
         .dsh-tp-track-fill {
           position: absolute;
           inset: 0 auto 0 0;
-          border-radius: 4px;
+          border-radius: 3px;
           min-width: 2px;
           transition: width 0.3s ease;
         }
@@ -628,20 +649,20 @@
           white-space: nowrap;
         }
 
-        /* ===== 会话排行 ===== */
+        /* 会话排行 */
         .dsh-tp-rank { display: flex; flex-direction: column; gap: 2px; }
         .dsh-tp-rank-row {
           display: grid;
-          grid-template-columns: 18px minmax(0, 1fr) 120px;
+          grid-template-columns: 16px minmax(0, 1fr) 110px;
           align-items: center;
           gap: 8px;
           padding: 5px 6px;
-          border-radius: 6px;
+          border-radius: 5px;
           transition: background 0.12s;
         }
         .dsh-tp-rank-row:hover { background: var(--dsh-tp-hover); }
         .dsh-tp-rank-no {
-          font-size: 10px;
+          font-size: 10.5px;
           font-weight: 700;
           text-align: center;
           color: var(--dsh-tp-fg-dim);
@@ -649,9 +670,8 @@
         }
         .dsh-tp-rank-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
         .dsh-tp-rank-title {
-          font-size: 12px;
+          font-size: 11.5px;
           font-weight: 550;
-          line-height: 1.3;
           color: var(--dsh-tp-fg);
           overflow: hidden;
           text-overflow: ellipsis;
@@ -690,37 +710,9 @@
           white-space: nowrap;
         }
 
-        /* ===== 明细行（最近一轮 / 规模） ===== */
-        .dsh-tp-detail {
-          display: flex;
-          flex-direction: column;
-          border-radius: 8px;
-          border: 1px solid var(--dsh-tp-border);
-          background: var(--dsh-tp-surface-2);
-          overflow: hidden;
-        }
-        .dsh-tp-detail-row {
-          display: flex;
-          align-items: center;
-          justify-content: space-between;
-          gap: 10px;
-          padding: 7px 11px;
-          font-size: 11.5px;
-        }
-        .dsh-tp-detail-row + .dsh-tp-detail-row {
-          border-top: 1px solid var(--dsh-tp-border);
-        }
-        .dsh-tp-detail-key { color: var(--dsh-tp-fg-dim); font-weight: 550; }
-        .dsh-tp-detail-val {
-          font-weight: 650;
-          font-variant-numeric: tabular-nums;
-          text-align: right;
-          color: var(--dsh-tp-fg);
-        }
-
-        /* ===== 空态 / 加载态 ===== */
+        /* ===== 空态 ===== */
         .dsh-tp-empty {
-          padding: 40px 24px;
+          padding: 36px 20px;
           display: flex;
           flex-direction: column;
           align-items: center;
@@ -728,16 +720,16 @@
           text-align: center;
           gap: 10px;
         }
-        .dsh-tp-empty-icon { font-size: 30px; line-height: 1; color: var(--dsh-tp-brand); }
-        .dsh-tp-empty-title { font-size: 13.5px; font-weight: 700; color: var(--dsh-tp-fg); }
+        .dsh-tp-empty-icon { font-size: 28px; line-height: 1; color: var(--dsh-tp-brand); }
+        .dsh-tp-empty-title { font-size: 13px; font-weight: 700; color: var(--dsh-tp-fg); }
         .dsh-tp-empty-desc {
-          font-size: 12px;
-          line-height: 1.65;
-          max-width: 400px;
+          font-size: 11.5px;
+          line-height: 1.6;
+          max-width: 380px;
           color: var(--dsh-tp-fg-dim);
         }
 
-        /* ===== 底部 ===== */
+        /* ===== 底部操作栏 ===== */
         .dsh-tp-foot {
           flex: 0 0 auto;
           display: flex;
@@ -757,7 +749,7 @@
         }
         .dsh-tp-foot-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
         .dsh-tp-btn-ghost {
-          padding: 5px 11px;
+          padding: 5px 12px;
           border-radius: 6px;
           border: 1px solid var(--dsh-tp-border-strong);
           background: var(--dsh-tp-surface);
@@ -765,7 +757,6 @@
           font: inherit;
           font-size: 11.5px;
           font-weight: 600;
-          line-height: 1.4;
           cursor: pointer;
           display: inline-flex;
           align-items: center;
@@ -775,7 +766,6 @@
         }
         .dsh-tp-btn-ghost:hover {
           background: var(--dsh-tp-hover);
-          border-color: var(--dsh-tp-border-strong);
         }
         .dsh-tp-btn-primary {
           padding: 5px 16px;
@@ -786,7 +776,6 @@
           font: inherit;
           font-size: 11.5px;
           font-weight: 650;
-          line-height: 1.4;
           cursor: pointer;
           white-space: nowrap;
           transition: filter 0.14s;
@@ -807,7 +796,7 @@
         document.head.appendChild(tag)
       }
 
-      // ---------- 格式化 ----------
+      // ---------- 格式化工具 ----------
 
       function formatTokens(num) {
         const n = Number(num) || 0
@@ -836,7 +825,6 @@
       function pctText(value, digits) {
         const d = typeof digits === 'number' ? digits : 1
         const v = Number(value) || 0
-        // 99.9% 之类不要四舍五入成 100%，避免看起来像"完全命中"
         if (v > 0 && v < 100 && Number(v.toFixed(d)) >= 100) return '99+%'
         return v.toFixed(d) + '%'
       }
@@ -854,7 +842,6 @@
       const WEEKDAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
       function dayParts(dateStr) {
-        // dateStr: YYYY-MM-DD
         const md = String(dateStr || '').slice(5)
         let wd = ''
         try {
@@ -872,14 +859,64 @@
         }
       }
 
-      // ---------- 小组件 ----------
+      // 提取会话 Token 总量（自适应所有 DSH 投影版本）
+      function extractTokenTotals(rawUsage, rawMeasurement) {
+        if (!rawUsage && !rawMeasurement) return { uncached: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+        const u = rawUsage && rawUsage.val ? rawUsage.val : rawUsage
+        const t = (u && (u.totals || (u.uncachedInputTokens !== undefined ? u : null) || (u.val && u.val.totals))) || null
+
+        let uncached = Number(t && t.uncachedInputTokens !== undefined ? t.uncachedInputTokens : 0)
+        let output = Number(t && t.outputTokens !== undefined ? t.outputTokens : 0)
+        let cacheRead = Number(t && t.cacheReadTokens !== undefined ? t.cacheReadTokens : 0)
+        let cacheWrite = Number(t && t.cacheWriteTokens !== undefined ? t.cacheWriteTokens : 0)
+
+        // 兜底：若仍为 0 则尝试读取 tokenMeasurement anchor
+        if (uncached + output + cacheRead === 0 && rawMeasurement) {
+          const m = rawMeasurement.val || rawMeasurement
+          const usage = (m && m.anchor && m.anchor.usage) || (m && m.usage)
+          if (usage) {
+            uncached = Number(usage.uncachedInputTokens || usage.input_tokens || 0)
+            output = Number(usage.outputTokens || usage.output_tokens || 0)
+            cacheRead = Number(usage.cacheReadTokens || usage.cache_read_input_tokens || 0)
+            cacheWrite = Number(usage.cacheWriteTokens || usage.cache_creation_input_tokens || 0)
+          }
+        }
+
+        return { uncached, output, cacheRead, cacheWrite }
+      }
+
+      // 提取最新一轮开销
+      function extractLastBuckets(rawUsage) {
+        if (!rawUsage) return null
+        const u = rawUsage.val || rawUsage
+        const last = u && (u.last || (u.val && u.val.last))
+        if (!last) return null
+        const b = last.buckets || last
+        const uncached = Number(b.uncachedInputTokens || 0)
+        const output = Number(b.outputTokens || 0)
+        const cacheRead = Number(b.cacheReadTokens || 0)
+        const cacheWrite = Number(b.cacheWriteTokens || 0)
+        if (uncached + output + cacheRead === 0) return null
+        return {
+          turn: last.turn,
+          step: last.step,
+          uncached,
+          output,
+          cacheRead,
+          cacheWrite,
+          total: uncached + output + cacheRead,
+          cachePct: pctOf(cacheRead, uncached + cacheRead),
+        }
+      }
+
+      // ---------- 视图组件 ----------
 
       function CompositionBar({ output, input, cacheRead }) {
         const total = output + input + cacheRead
         const parts = [
-          { key: 'o', label: '输出', value: output, color: C_OUT },
-          { key: 'i', label: '未缓存输入', value: input, color: C_IN },
           { key: 'c', label: '缓存读取', value: cacheRead, color: C_CACHE },
+          { key: 'i', label: '未缓存输入', value: input, color: C_IN },
+          { key: 'o', label: '补全输出', value: output, color: C_OUT },
         ]
         return h('div', { className: 'dsh-tp-comp' }, [
           h(
@@ -900,7 +937,7 @@
           ),
           h(
             'div',
-            { key: 'legend', className: 'dsh-tp-legend' },
+            { key: 'legend', className: 'dsh-tp-legend', style: { marginTop: '8px' } },
             parts.map((p) =>
               h('span', { key: p.key, className: 'dsh-tp-legend-item' }, [
                 h('i', { key: 'd', className: 'dsh-tp-dot', style: { background: p.color } }),
@@ -913,10 +950,10 @@
         ])
       }
 
-      function Tiles({ items }) {
+      function StatCards3({ items }) {
         return h(
           'div',
-          { className: 'dsh-tp-grid' },
+          { className: 'dsh-tp-grid-3' },
           items.map((it) =>
             h('div', { key: it.key, className: 'dsh-tp-tile' }, [
               h('span', { key: 'l', className: 'dsh-tp-tile-label' }, it.label),
@@ -927,20 +964,7 @@
         )
       }
 
-      function DetailRows({ rows }) {
-        return h(
-          'div',
-          { className: 'dsh-tp-detail' },
-          rows.map((r) =>
-            h('div', { key: r.key, className: 'dsh-tp-detail-row' }, [
-              h('span', { key: 'k', className: 'dsh-tp-detail-key' }, r.label),
-              h('span', { key: 'v', className: 'dsh-tp-detail-val', style: r.color ? { color: r.color } : null }, r.value),
-            ]),
-          ),
-        )
-      }
-
-      // ---------- 面板 ----------
+      // ---------- 面板弹窗 ----------
 
       function TokenStatsModal({ isOpen, onClose, sessionData, globalData, onRefreshGlobal, sessionTitle }) {
         const [tab, setTab] = React.useState('session')
@@ -948,7 +972,6 @@
         const [copied, setCopied] = React.useState(false)
         const theme = useHostTheme()
 
-        // 打开时：有本会话数据就落在「当前会话」，否则直接看全局
         React.useEffect(() => {
           if (!isOpen) return
           setTab(sessionData.totalTokens > 0 ? 'session' : 'global')
@@ -977,8 +1000,6 @@
         const rangeDays = globalRange === 'today' ? 1 : globalRange === 'week' ? 7 : 30
         const todayStr = todayString()
 
-        // 每日走势（自适应范围）
-        // days 已按日期倒序（最新在前），这里保持「今天在最上面」
         const trendRows = (globalData && Array.isArray(globalData.days) ? globalData.days : []).slice(0, rangeDays)
         const trendMax = trendRows.reduce((m, d) => Math.max(m, Number(d.total) || 0), 0)
 
@@ -986,7 +1007,6 @@
         const topMax = topSessions.reduce((m, s) => Math.max(m, Number(s.total) || 0), 0)
 
         const sessionTotal = sessionData.totalTokens
-        const sessionInputTotal = sessionData.uncached + sessionData.cacheRead
         const avgPerActiveDay = rangeData.activeDays > 0 ? rangeData.total / rangeData.activeDays : 0
 
         const reportLines = () => {
@@ -994,30 +1014,30 @@
             return [
               '📊 Token 用量 · 当前会话' + (sessionTitle ? '：' + sessionTitle : ''),
               '─────────────────────────────',
-              '总消耗      ' + formatTokens(sessionTotal) + '  (' + formatInt(sessionTotal) + ' tokens)',
-              '· 补全输出    ' + formatTokens(sessionData.output) + '  (' + pctText(pctOf(sessionData.output, sessionTotal)) + ')',
-              '· 未缓存输入  ' + formatTokens(sessionData.uncached) + '  (' + pctText(pctOf(sessionData.uncached, sessionTotal)) + ')',
+              '总消耗        ' + formatTokens(sessionTotal) + '  (' + formatInt(sessionTotal) + ' tokens)',
               '· 缓存读取    ' + formatTokens(sessionData.cacheRead) + '  (' + pctText(pctOf(sessionData.cacheRead, sessionTotal)) + ')',
+              '· 未缓存输入  ' + formatTokens(sessionData.uncached) + '  (' + pctText(pctOf(sessionData.uncached, sessionTotal)) + ')',
+              '· 补全输出    ' + formatTokens(sessionData.output) + '  (' + pctText(pctOf(sessionData.output, sessionTotal)) + ')',
               '缓存命中率    ' + pctText(sessionData.cachePct),
               sessionData.lastBuckets
-                ? '最近一轮      #' + sessionData.lastTurn + ' 轮 / 第 ' + sessionData.lastStep + ' 步：输出 ' +
-                  formatTokens(sessionData.lastOutput) + '，输入 ' + formatTokens(sessionData.lastUncached) +
-                  '，缓存 ' + formatTokens(sessionData.lastCacheRead) + ' (' + pctText(sessionData.lastCachePct) + ')'
+                ? '最近一轮      #' + sessionData.lastBuckets.turn + ' 轮 · 第 ' + sessionData.lastBuckets.step + ' 步：生成 ' +
+                  formatTokens(sessionData.lastBuckets.output) + '，输入 ' + formatTokens(sessionData.lastBuckets.uncached) +
+                  '，缓存 ' + formatTokens(sessionData.lastBuckets.cacheRead) + ' (' + pctText(sessionData.lastBuckets.cachePct) + ')'
                 : '',
               sessionData.turns > 0
-                ? '会话规模      ' + sessionData.turns + ' 轮 · ' + sessionData.steps + ' 次模型调用 · 模型耗时 ' + formatDuration(sessionData.llmMs)
+                ? '会话规模      ' + sessionData.turns + ' 轮 · ' + sessionData.steps + ' 次调用 · 耗时 ' + formatDuration(sessionData.llmMs)
                 : '',
             ]
               .filter(Boolean)
               .join('\n')
           }
           const lines = [
-            '📊 Token 用量 · 全局' + rangeLabel + '统计',
+            '📊 Token 用量 · 全局 ' + rangeLabel + '统计',
             '─────────────────────────────',
-            '总消耗      ' + formatTokens(rangeData.total) + '  (' + formatInt(rangeData.total) + ' tokens)',
-            '· 补全输出    ' + formatTokens(rangeData.output) + '  (' + pctText(pctOf(rangeData.output, rangeData.total)) + ')',
-            '· 未缓存输入  ' + formatTokens(rangeData.input) + '  (' + pctText(pctOf(rangeData.input, rangeData.total)) + ')',
+            '总消耗        ' + formatTokens(rangeData.total) + '  (' + formatInt(rangeData.total) + ' tokens)',
             '· 缓存读取    ' + formatTokens(rangeData.cacheRead) + '  (' + pctText(pctOf(rangeData.cacheRead, rangeData.total)) + ')',
+            '· 未缓存输入  ' + formatTokens(rangeData.input) + '  (' + pctText(pctOf(rangeData.input, rangeData.total)) + ')',
+            '· 补全输出    ' + formatTokens(rangeData.output) + '  (' + pctText(pctOf(rangeData.output, rangeData.total)) + ')',
             '缓存命中率    ' + pctText(rangeData.cachePct),
             '活跃天数      ' + rangeData.activeDays + ' 天 · 日均 ' + formatTokens(avgPerActiveDay),
             '模型交互      ' + formatInt(rangeData.calls) + ' 次',
@@ -1066,14 +1086,16 @@
             label,
           )
 
-        // ---- 当前会话视图 ----
+        // ---- 当前会话内容 ----
         const sessionBody = [
           h('div', { key: 'hero', className: 'dsh-tp-hero' }, [
-            h('span', { key: 'l', className: 'dsh-tp-hero-label' }, '当前会话总消耗'),
-            h('div', { key: 'r', className: 'dsh-tp-hero-row' }, [
+            h('div', { key: 'hdr', className: 'dsh-tp-hero-header' }, [
+              h('span', { key: 'l', className: 'dsh-tp-hero-label' }, '当前会话累计消耗'),
+              h('span', { key: 'e', className: 'dsh-tp-hero-exact' }, formatInt(sessionTotal) + ' tokens'),
+            ]),
+            h('div', { key: 'num', className: 'dsh-tp-hero-num' }, [
               h('span', { key: 'v', className: 'dsh-tp-hero-val' }, formatTokens(sessionTotal)),
               h('span', { key: 'u', className: 'dsh-tp-hero-unit' }, 'tokens'),
-              h('span', { key: 'e', className: 'dsh-tp-hero-exact' }, formatInt(sessionTotal)),
             ]),
             h(CompositionBar, {
               key: 'comp',
@@ -1083,106 +1105,87 @@
             }),
           ]),
 
-          h(Tiles, {
-            key: 'tiles',
+          h(StatCards3, {
+            key: 'stats',
             items: [
               {
                 key: 'hit',
                 label: '缓存命中率',
                 value: pctText(sessionData.cachePct),
-                sub: formatTokens(sessionData.cacheRead) + ' / ' + formatTokens(sessionInputTotal) + ' 输入',
+                sub: '已节省 ' + formatTokens(sessionData.cacheRead) + ' tok',
                 color: C_CACHE,
               },
               {
-                key: 'calls',
-                label: '模型调用',
-                value: formatInt(sessionData.steps),
-                sub: sessionData.turns > 0 ? sessionData.turns + ' 轮对话' : '次请求',
+                key: 'scale',
+                label: '交互规模',
+                value: (sessionData.turns || 0) + ' 轮 · ' + (sessionData.steps || 0) + ' 次',
+                sub: sessionData.turns > 0 ? '均轮 ' + Math.round(sessionData.steps / sessionData.turns) + ' 次调用' : '次交互',
               },
               {
-                key: 'llm',
+                key: 'time',
                 label: '模型耗时',
                 value: formatDuration(sessionData.llmMs),
-                sub: sessionData.ttftSteps > 0 ? '平均首字 ' + formatDuration(sessionData.ttftMs / sessionData.ttftSteps) : '累计推理时间',
-              },
-              {
-                key: 'avg',
-                label: '每轮均耗',
-                value: formatTokens(sessionData.turns > 0 ? sessionTotal / sessionData.turns : sessionTotal),
-                sub: sessionData.turns > 0 ? '按 ' + sessionData.turns + ' 轮均摊' : '暂无轮次',
+                sub: sessionData.ttftSteps > 0 ? '首字 TTFT ' + formatDuration(sessionData.ttftMs / sessionData.ttftSteps) : '累计推理时间',
               },
             ],
           }),
 
           sessionData.lastBuckets
-            ? h('div', { key: 'last', className: 'dsh-tp-sec' }, [
-                h('div', { key: 'h', className: 'dsh-tp-sec-head' }, [
-                  h('span', { key: 't', className: 'dsh-tp-sec-title' }, '最近一轮开销'),
-                  h(
-                    'span',
-                    { key: 'i', className: 'dsh-tp-sec-hint' },
-                    '第 ' + sessionData.lastTurn + ' 轮 · 第 ' + sessionData.lastStep + ' 步',
-                  ),
+            ? h('div', { key: 'last', className: 'dsh-tp-last-card' }, [
+                h('div', { key: 'lh', className: 'dsh-tp-last-head' }, [
+                  h('span', { key: 't', className: 'dsh-tp-last-title' }, '最近一轮交互'),
+                  h('span', { key: 'i' }, '#' + sessionData.lastBuckets.turn + ' 轮 · 第 ' + sessionData.lastBuckets.step + ' 步'),
                 ]),
-                h(DetailRows, {
-                  key: 'd',
-                  rows: [
-                    { key: 'o', label: '补全输出', value: formatTokens(sessionData.lastOutput) + '  (' + formatInt(sessionData.lastOutput) + ')', color: C_OUT },
-                    { key: 'i', label: '未缓存输入', value: formatTokens(sessionData.lastUncached) + '  (' + formatInt(sessionData.lastUncached) + ')', color: C_IN },
-                    { key: 'c', label: '缓存读取', value: formatTokens(sessionData.lastCacheRead) + '  (' + formatInt(sessionData.lastCacheRead) + ')', color: C_CACHE },
-                    { key: 'h', label: '本轮命中率', value: pctText(sessionData.lastCachePct) },
-                  ],
-                }),
+                h('div', { key: 'chips', className: 'dsh-tp-last-chips' }, [
+                  h('span', { key: 'c1', className: 'dsh-tp-chip' }, [
+                    h('i', { key: 'd', className: 'dsh-tp-dot', style: { background: C_CACHE } }),
+                    h('span', { key: 'l', className: 'dsh-tp-chip-dim' }, '缓存读取'),
+                    h('b', { key: 'v' }, formatTokens(sessionData.lastBuckets.cacheRead)),
+                    h('span', { key: 'p', className: 'dsh-tp-chip-dim' }, '(' + pctText(sessionData.lastBuckets.cachePct, 0) + ')'),
+                  ]),
+                  h('span', { key: 'c2', className: 'dsh-tp-chip' }, [
+                    h('i', { key: 'd', className: 'dsh-tp-dot', style: { background: C_IN } }),
+                    h('span', { key: 'l', className: 'dsh-tp-chip-dim' }, '未缓存输入'),
+                    h('b', { key: 'v' }, formatTokens(sessionData.lastBuckets.uncached)),
+                  ]),
+                  h('span', { key: 'c3', className: 'dsh-tp-chip' }, [
+                    h('i', { key: 'd', className: 'dsh-tp-dot', style: { background: C_OUT } }),
+                    h('span', { key: 'l', className: 'dsh-tp-chip-dim' }, '补全输出'),
+                    h('b', { key: 'v' }, formatTokens(sessionData.lastBuckets.output)),
+                  ]),
+                ]),
               ])
             : null,
-
-          h('div', { key: 'scale', className: 'dsh-tp-sec' }, [
-            h('div', { key: 'h', className: 'dsh-tp-sec-head' }, [
-              h('span', { key: 't', className: 'dsh-tp-sec-title' }, '会话规模'),
-            ]),
-            h(DetailRows, {
-              key: 'd',
-              rows: [
-                { key: 'turns', label: '对话轮次', value: String(sessionData.turns || 0) + ' 轮' },
-                { key: 'steps', label: '模型调用', value: String(sessionData.steps || 0) + ' 次' },
-                { key: 'llm', label: '模型耗时', value: formatDuration(sessionData.llmMs) },
-                {
-                  key: 'ttft',
-                  label: '平均首字延迟',
-                  value: sessionData.ttftSteps > 0 ? formatDuration(sessionData.ttftMs / sessionData.ttftSteps) : '—',
-                },
-              ],
-            }),
-          ]),
         ]
 
-        // ---- 全局视图 ----
+        // ---- 全局统计内容 ----
         const globalBody =
           globalData === null
             ? [
                 h('div', { key: 'empty', className: 'dsh-tp-empty' }, [
                   h('div', { key: 'i', className: 'dsh-tp-empty-icon' }, '📊'),
-                  h('div', { key: 't', className: 'dsh-tp-empty-title' }, '全局统计服务尚未就绪'),
+                  h('div', { key: 't', className: 'dsh-tp-empty-title' }, '全局统计服务就绪中'),
                   h(
                     'div',
                     { key: 'd', className: 'dsh-tp-empty-desc' },
-                    '全局周/月统计由插件后台聚合。新增的路由只在客户端启动时加载，' +
-                      '仅按 Ctrl+R 重载界面不会生效——请完全退出 DeepSeek Harness 后重新打开。',
+                    '正在聚合本机历史账本与近 48 小时会话。若长时间未载入，请点击重新连接。',
                   ),
                   h(
                     'button',
                     { key: 'r', type: 'button', className: 'dsh-tp-btn-ghost', onClick: onRefreshGlobal },
-                    '⟳ 重新连接',
+                    '⟳ 刷新连接',
                   ),
                 ]),
               ]
             : [
                 h('div', { key: 'hero', className: 'dsh-tp-hero' }, [
-                  h('span', { key: 'l', className: 'dsh-tp-hero-label' }, rangeLabel + '总消耗'),
-                  h('div', { key: 'r', className: 'dsh-tp-hero-row' }, [
+                  h('div', { key: 'hdr', className: 'dsh-tp-hero-header' }, [
+                    h('span', { key: 'l', className: 'dsh-tp-hero-label' }, rangeLabel + '总消耗'),
+                    h('span', { key: 'e', className: 'dsh-tp-hero-exact' }, formatInt(rangeData.total) + ' tokens'),
+                  ]),
+                  h('div', { key: 'num', className: 'dsh-tp-hero-num' }, [
                     h('span', { key: 'v', className: 'dsh-tp-hero-val' }, formatTokens(rangeData.total)),
                     h('span', { key: 'u', className: 'dsh-tp-hero-unit' }, 'tokens'),
-                    h('span', { key: 'e', className: 'dsh-tp-hero-exact' }, formatInt(rangeData.total)),
                   ]),
                   h(CompositionBar, {
                     key: 'comp',
@@ -1192,13 +1195,28 @@
                   }),
                 ]),
 
-                h(Tiles, {
+                h(StatCards3, {
                   key: 'tiles',
                   items: [
-                    { key: 'hit', label: '缓存命中率', value: pctText(rangeData.cachePct), sub: formatTokens(rangeData.cacheRead) + ' 命中读取', color: C_CACHE },
-                    { key: 'avg', label: '日均消耗', value: formatTokens(avgPerActiveDay), sub: '按活跃 ' + rangeData.activeDays + ' 天计' },
-                    { key: 'calls', label: '模型交互', value: formatInt(rangeData.calls), sub: '次请求' },
-                    { key: 'days', label: '活跃天数', value: String(rangeData.activeDays) + ' 天', sub: rangeLabel + '内' },
+                    {
+                      key: 'hit',
+                      label: '缓存命中率',
+                      value: pctText(rangeData.cachePct),
+                      sub: '节省 ' + formatTokens(rangeData.cacheRead) + ' tok',
+                      color: C_CACHE,
+                    },
+                    {
+                      key: 'calls',
+                      label: '模型交互',
+                      value: formatInt(rangeData.calls) + ' 次',
+                      sub: '活跃 ' + rangeData.activeDays + ' 天',
+                    },
+                    {
+                      key: 'avg',
+                      label: '日均消耗',
+                      value: formatTokens(avgPerActiveDay),
+                      sub: rangeLabel + '平均',
+                    },
                   ],
                 }),
 
@@ -1206,7 +1224,7 @@
                   ? h('div', { key: 'trend', className: 'dsh-tp-sec' }, [
                       h('div', { key: 'h', className: 'dsh-tp-sec-head' }, [
                         h('span', { key: 't', className: 'dsh-tp-sec-title' }, '每日走势'),
-                        h('span', { key: 'i', className: 'dsh-tp-sec-hint' }, '峰值 ' + formatTokens(trendMax)),
+                        h('span', { key: 'i', className: 'dsh-tp-sec-hint' }, '最高 ' + formatTokens(trendMax)),
                       ]),
                       h(
                         'div',
@@ -1265,7 +1283,7 @@
                               h('span', { key: 'n', className: 'dsh-tp-rank-no' }, String(i + 1)),
                               h('div', { key: 'm', className: 'dsh-tp-rank-main' }, [
                                 h('span', { key: 't', className: 'dsh-tp-rank-title' }, s.title || '未命名会话'),
-                                h('div', { key: 'b', className: 'dsh-tp-track dsh-tp-rank-track' }, [
+                                h('div', { key: 'b', className: 'dsh-tp-rank-track' }, [
                                   h('div', {
                                     key: 'f',
                                     className: 'dsh-tp-rank-fill',
@@ -1293,112 +1311,109 @@
           'div',
           { className: 'dsh-tp-scope dsh-tp-overlay', 'data-dsh-tp-theme': theme, onClick: onClose },
           [
-          h(
-            'div',
-            {
-              key: 'dialog',
-              className: 'dsh-tp-dialog',
-              role: 'dialog',
-              'aria-modal': 'true',
-              'aria-label': 'Token 用量分析',
-              onClick: (e) => e.stopPropagation(),
-            },
-            [
-              // 顶部
-              h('div', { key: 'head', className: 'dsh-tp-head' }, [
-                h('span', { key: 'badge', className: 'dsh-tp-badge' }, '⚡'),
-                h('div', { key: 'text', className: 'dsh-tp-head-text' }, [
-                  h('span', { key: 't', className: 'dsh-tp-head-title' }, 'Token 用量分析'),
+            h(
+              'div',
+              {
+                key: 'dialog',
+                className: 'dsh-tp-dialog',
+                role: 'dialog',
+                'aria-modal': 'true',
+                'aria-label': 'Token 用量分析',
+                onClick: (e) => e.stopPropagation(),
+              },
+              [
+                // 头部
+                h('div', { key: 'head', className: 'dsh-tp-head' }, [
+                  h('span', { key: 'badge', className: 'dsh-tp-badge' }, '⚡'),
+                  h('div', { key: 'text', className: 'dsh-tp-head-text' }, [
+                    h('span', { key: 't', className: 'dsh-tp-head-title' }, 'Token 用量分析'),
+                    h(
+                      'span',
+                      { key: 's', className: 'dsh-tp-head-sub' },
+                      tab === 'session'
+                        ? sessionTitle
+                          ? sessionTitle
+                          : '当前会话'
+                        : '全局 · ' + rangeLabel,
+                    ),
+                  ]),
                   h(
-                    'span',
-                    { key: 's', className: 'dsh-tp-head-sub' },
-                    tab === 'session'
-                      ? sessionTitle
-                        ? '当前会话 · ' + sessionTitle
-                        : '当前会话'
-                      : '全局 · ' + rangeLabel,
+                    'button',
+                    {
+                      key: 'refresh',
+                      type: 'button',
+                      className: 'dsh-tp-icon-btn',
+                      title: '刷新全局统计',
+                      'aria-label': '刷新全局统计',
+                      onClick: onRefreshGlobal,
+                    },
+                    '⟳',
+                  ),
+                  h(
+                    'button',
+                    {
+                      key: 'close',
+                      type: 'button',
+                      className: 'dsh-tp-icon-btn',
+                      title: '关闭 (Esc)',
+                      'aria-label': '关闭',
+                      onClick: onClose,
+                    },
+                    '✕',
                   ),
                 ]),
-                h(
-                  'button',
-                  {
-                    key: 'refresh',
-                    type: 'button',
-                    className: 'dsh-tp-icon-btn',
-                    title: '刷新全局统计',
-                    'aria-label': '刷新全局统计',
-                    onClick: onRefreshGlobal,
-                  },
-                  '⟳',
-                ),
-                h(
-                  'button',
-                  {
-                    key: 'close',
-                    type: 'button',
-                    className: 'dsh-tp-icon-btn',
-                    title: '关闭 (Esc)',
-                    'aria-label': '关闭',
-                    onClick: onClose,
-                  },
-                  '✕',
-                ),
-              ]),
 
-              // 页签
-              h('div', { key: 'tabs', className: 'dsh-tp-seg-wrap' }, [
-                h('div', { key: 'seg', className: 'dsh-tp-seg' }, [
-                  segItem('t1', '当前会话', tab === 'session', () => setTab('session')),
-                  segItem('t2', '全局统计', tab === 'global', () => setTab('global')),
-                ]),
-              ]),
-
-              // 内容
-              h('div', { key: 'body', className: 'dsh-tp-body' }, [
-                tab === 'global'
-                  ? h('div', { key: 'range', className: 'dsh-tp-seg-wrap', style: { padding: 0 } }, [
-                      h('div', { key: 'seg', className: 'dsh-tp-seg' }, [
+                // 导航与过滤栏
+                h('div', { key: 'nav', className: 'dsh-tp-nav' }, [
+                  h('div', { key: 'main-tabs', className: 'dsh-tp-seg' }, [
+                    segItem('t1', '当前会话', tab === 'session', () => setTab('session')),
+                    segItem('t2', '全局统计', tab === 'global', () => setTab('global')),
+                  ]),
+                  tab === 'global'
+                    ? h('div', { key: 'range-tabs', className: 'dsh-tp-seg' }, [
                         segItem('r1', '今日', globalRange === 'today', () => setGlobalRange('today')),
                         segItem('r2', '近 7 天', globalRange === 'week', () => setGlobalRange('week')),
                         segItem('r3', '近 30 天', globalRange === 'month', () => setGlobalRange('month')),
-                      ]),
-                    ])
-                  : null,
-                ...(tab === 'session' ? sessionBody : globalBody),
-              ]),
-
-              // 底部
-              h('div', { key: 'foot', className: 'dsh-tp-foot' }, [
-                h(
-                  'span',
-                  { key: 'note', className: 'dsh-tp-foot-note' },
-                  tab === 'session' ? '实时数据 · 随对话更新' : '聚合自本机历史账本与近 48 小时会话',
-                ),
-                h('div', { key: 'actions', className: 'dsh-tp-foot-actions' }, [
-                  h(
-                    'button',
-                    { key: 'copy', type: 'button', className: 'dsh-tp-btn-ghost', onClick: handleCopy },
-                    copied ? '✓ 已复制' : '复制报告',
-                  ),
-                  h('button', { key: 'done', type: 'button', className: 'dsh-tp-btn-primary', onClick: onClose }, '完成'),
+                      ])
+                    : null,
                 ]),
-              ]),
-            ],
-          ),
-        ])
+
+                // 内容区
+                h('div', { key: 'body', className: 'dsh-tp-body' }, tab === 'session' ? sessionBody : globalBody),
+
+                // 底部操作栏
+                h('div', { key: 'foot', className: 'dsh-tp-foot' }, [
+                  h(
+                    'span',
+                    { key: 'note', className: 'dsh-tp-foot-note' },
+                    tab === 'session' ? '实时统计 · 随会话更新' : '聚合自本机历史账本与近 48 小时会话',
+                  ),
+                  h('div', { key: 'actions', className: 'dsh-tp-foot-actions' }, [
+                    h(
+                      'button',
+                      { key: 'copy', type: 'button', className: 'dsh-tp-btn-ghost', onClick: handleCopy },
+                      copied ? '✓ 已复制' : '复制报告',
+                    ),
+                    h('button', { key: 'done', type: 'button', className: 'dsh-tp-btn-primary', onClick: onClose }, '完成'),
+                  ]),
+                ]),
+              ],
+            ),
+          ],
+        )
 
         return portalToBody(overlay)
       }
 
-      // ---------- 胶囊 ----------
+      // ---------- 胶囊操作入口 ----------
 
       function TokenPillAction(props) {
         const useProjection = typeof props.useProjection === 'function' ? props.useProjection : null
         const rawUsage = useProjection ? useProjection('tokenUsage') : null
+        const rawMeasurement = useProjection ? useProjection('tokenMeasurement') : null
         const rawStats = useProjection ? useProjection('sessionStats') : null
         const rawTitle = useProjection ? useProjection('title') : null
 
-        const tokenUsage = rawUsage && rawUsage.val ? rawUsage.val : rawUsage
         const sessionStats = rawStats && rawStats.val ? rawStats.val : rawStats
         const titleVal = rawTitle && rawTitle.val ? rawTitle.val : rawTitle
         const sessionTitle =
@@ -1422,20 +1437,13 @@
           fetchGlobalStats()
         }, [fetchGlobalStats])
 
-        const totals = tokenUsage ? tokenUsage.totals : null
-        const uncached = Number((totals && totals.uncachedInputTokens) || 0)
-        const output = Number((totals && totals.outputTokens) || 0)
-        const cacheRead = Number((totals && totals.cacheReadTokens) || 0)
-        const cacheWrite = Number((totals && totals.cacheWriteTokens) || 0)
+        // 统一可靠提取数据
+        const { uncached, output, cacheRead, cacheWrite } = extractTokenTotals(rawUsage, rawMeasurement)
         const totalInput = uncached + cacheRead
         const totalTokens = totalInput + output
         const cachePct = pctOf(cacheRead, totalInput)
 
-        const last = tokenUsage ? tokenUsage.last : null
-        const lastBuckets = last ? last.buckets : null
-        const lastUncached = Number((lastBuckets && lastBuckets.uncachedInputTokens) || 0)
-        const lastOutput = Number((lastBuckets && lastBuckets.outputTokens) || 0)
-        const lastCacheRead = Number((lastBuckets && lastBuckets.cacheReadTokens) || 0)
+        const lastBuckets = extractLastBuckets(rawUsage)
 
         const sessionData = {
           totalTokens,
@@ -1445,12 +1453,6 @@
           cacheWrite,
           cachePct,
           lastBuckets,
-          lastTurn: last ? last.turn : undefined,
-          lastStep: last ? last.step : undefined,
-          lastOutput,
-          lastUncached,
-          lastCacheRead,
-          lastCachePct: pctOf(lastCacheRead, lastUncached + lastCacheRead),
           turns: Number((sessionStats && sessionStats.turns) || 0),
           steps: Number((sessionStats && sessionStats.steps) || 0),
           llmMs: Number((sessionStats && sessionStats.llmMs) || 0),
@@ -1474,7 +1476,7 @@
           sessionTitle,
         })
 
-        // 空会话 / 首页：输入区保留一个低调的「⚡ 0」，头部不显示
+        // 空会话 / 首页：输入区保留「⚡ 0」，头部不显示
         if (totalTokens <= 0) {
           if (props.placement === 'header') return null
           return h('span', { className: 'dsh-tp-scope dsh-tp-group', 'data-dsh-tp-theme': theme }, [
@@ -1534,7 +1536,7 @@
         ])
       }
 
-      // ---------- 注册 ----------
+      // ---------- 插件注册 ----------
 
       function apply(ctx) {
         ensureStyle()
