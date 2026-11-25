@@ -85,6 +85,15 @@
             margin: 0 1px;
             font-size: 10px;
           }
+          /* 修复模态弹窗打开时的视口右侧空白与整体向左偏移问题 */
+          html.agy-modal-open,
+          html.agy-modal-open body {
+            overflow: initial !important;
+            scrollbar-gutter: auto !important;
+          }
+          html.agy-modal-open [data-conversation-scroll] {
+            scrollbar-gutter: auto !important;
+          }
         `
         document.head.appendChild(style)
       }

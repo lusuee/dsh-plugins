@@ -1,6 +1,6 @@
 {
   "name": "dsh-agy-quota-chip",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Displays Antigravity 5-hour rolling and weekly quota details next to the composer model selector.",
   "type": "module",
