@@ -1,14 +1,16 @@
 // dsh-token-pill — browser half.
 //
-// Displays a minimal, clean token usage pill in the session header utilities:
-// e.g. [ ⚡ 38.2k · 缓 96% ]
+// Displays a minimal, clean token usage pill in the session header utilities
+// and composer toolbar: e.g. [ ⚡ 38.2k · 缓 96% ]
 //
 // 1. Reads DSH native reactive projections: `tokenUsage` & `sessionStats`.
-// 2. Automatically hidden on 0 tokens / blank sessions (zero clutter).
-// 3. Hovering shows a rich, structured breakdown: output, uncached input,
+// 2. Dual-slot support: composer right toolbar (conversation.input.right)
+//    and session header utilities (conversation.session.header.utilities).
+// 3. Displays subtle `⚡ 0` on blank sessions / home page so status is clear.
+// 4. Hovering shows a rich, structured breakdown: output, uncached input,
 //    cache hit rate, last turn metrics, turns, model execution time.
-// 4. Clicking copies the full report to clipboard with a brief toast.
-// 5. Zero external network requests, zero database bloat, zero pricing guesswork.
+// 5. Clicking copies the full report to clipboard with a brief toast.
+// 6. Zero external network requests, zero database bloat, zero pricing guesswork.
 
 ;(function (root) {
   'use strict'
@@ -35,7 +37,7 @@
         .dsh-tp-btn {
           display: inline-flex;
           align-items: center;
-          gap: 5px;
+          gap: 4px;
           height: 24px;
           padding: 0 8px;
           border-radius: 9999px;
@@ -61,14 +63,27 @@
         .dsh-tp-btn:active {
           transform: translateY(0);
         }
+        .dsh-tp-btn-empty {
+          opacity: 0.72;
+        }
+        .dsh-tp-btn-empty:hover {
+          opacity: 1;
+        }
         .dsh-tp-icon {
           font-size: 11px;
           line-height: 1;
           color: var(--dsw-alias-brand, #3b82f6);
         }
+        .dsh-tp-icon-dim {
+          opacity: 0.65;
+        }
         .dsh-tp-main {
           font-variant-numeric: tabular-nums;
           font-weight: 600;
+        }
+        .dsh-tp-dim {
+          opacity: 0.75;
+          font-weight: 500;
         }
         .dsh-tp-cache {
           font-variant-numeric: tabular-nums;
@@ -138,8 +153,26 @@
         const totalInput = uncached + cacheRead
         const totalTokens = totalInput + output
 
-        // If no tokens have been consumed (new or empty conversation), don't show the pill
-        if (totalTokens <= 0) return null
+        // Blank session or home page: show clean subtle "⚡ 0" in input, hide in header
+        if (totalTokens <= 0) {
+          if (props.placement === 'header') return null
+          return h('span', { className: 'dsh-tp-group' }, [
+            h(
+              'button',
+              {
+                key: 'btn',
+                type: 'button',
+                className: 'dsh-tp-btn dsh-tp-btn-empty',
+                title: '📊 Token 用量统计\n─────────────────────────\n当前会话暂无 Token 消耗\n产生交互后将自动统计输出量与缓存命中率',
+                'aria-label': 'Token 用量: 0',
+              },
+              [
+                h('span', { key: 'icon', className: 'dsh-tp-icon dsh-tp-icon-dim' }, '⚡'),
+                h('span', { key: 'zero', className: 'dsh-tp-main dsh-tp-dim' }, '0'),
+              ],
+            ),
+          ])
+        }
 
         const cachePct = totalInput > 0 ? (cacheRead / totalInput) * 100 : 0
 
@@ -251,19 +284,36 @@
       function apply(ctx) {
         ensureStyle()
         if (!ctx.slots || typeof ctx.slots.inject !== 'function' || typeof ctx.slots.register !== 'function') return
+
+        // 1. Session header utilities row (top-right of open conversation)
         ctx.effect(() => {
           return ctx.slots.inject('conversation.session.header.utilities', () => {
             return ctx.slots.register(
               {
                 name: 'conversation.session.header.utilities',
-                id: 'token-pill',
+                id: 'token-pill-header',
                 order: -5,
                 label: () => 'Token 用量',
               },
-              TokenPillAction,
+              (props) => h(TokenPillAction, { ...props, placement: 'header' }),
             )
           })
         }, 'dsh-token-pill: header token pill')
+
+        // 2. Composer input right toolbar (next to model selector & quota chip)
+        ctx.effect(() => {
+          return ctx.slots.inject('conversation.input.right', () => {
+            return ctx.slots.register(
+              {
+                name: 'conversation.input.right',
+                id: 'token-pill-input',
+                order: 85,
+                inject: (sessionId) => ({ sessionId }),
+              },
+              (props) => h(TokenPillAction, { ...props, placement: 'input' }),
+            )
+          })
+        }, 'dsh-token-pill: composer token pill')
       }
 
       exports.inject = ['slots']
