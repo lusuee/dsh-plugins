@@ -1,6 +1,6 @@
 {
   "name": "dsh-token-pill",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "description": "Ultra-lightweight session token usage and cache hit rate pill in the session header.",
