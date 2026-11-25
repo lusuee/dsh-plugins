@@ -1542,22 +1542,7 @@
         ensureStyle()
         if (!ctx.slots || typeof ctx.slots.inject !== 'function' || typeof ctx.slots.register !== 'function') return
 
-        // 1. 会话头部工具栏
-        ctx.effect(() => {
-          return ctx.slots.inject('conversation.session.header.utilities', () => {
-            return ctx.slots.register(
-              {
-                name: 'conversation.session.header.utilities',
-                id: 'token-pill-header',
-                order: -5,
-                label: () => 'Token 用量',
-              },
-              (props) => h(TokenPillAction, { ...props, placement: 'header' }),
-            )
-          })
-        }, 'dsh-token-pill: header token pill')
-
-        // 2. 输入框右侧工具条
+        // 仅注册在输入框右侧工具条（底栏胶囊）
         ctx.effect(() => {
           return ctx.slots.inject('conversation.input.right', () => {
             return ctx.slots.register(
