@@ -21,6 +21,27 @@
       const React = require('react')
       const h = React.createElement
 
+      // 面板必须挂到 document.body。Slots 文档对 conversation.input.* 明确要求：
+      // "fixed overlays must portal to the document body because the docked composer contains them"。
+      // 输入区会为 position:fixed 建立包含块，就地渲染的结果是被裁进那一条输入栏里。
+      let reactDom = null
+      try {
+        reactDom = require('react-dom')
+      } catch {
+        reactDom = null
+      }
+      const createPortal = reactDom && typeof reactDom.createPortal === 'function' ? reactDom.createPortal : null
+
+      function portalToBody(node) {
+        if (createPortal === null) return node
+        if (typeof document === 'undefined' || !document.body) return node
+        try {
+          return createPortal(node, document.body)
+        } catch {
+          return node
+        }
+      }
+
       const STATS_ROUTE = '/__dsh-token-pill/stats'
       const STYLE_ID = 'dsh-token-pill-style'
 
@@ -83,23 +104,27 @@
           font-weight: 500;
         }
 
-        /* ===== 面板骨架 ===== */
+        /* ===== 面板骨架 =====
+           整块由 portal 挂到 document.body，祖先不再有包含块/裁剪，所以这里
+           用确定尺寸（vh / px），不依赖父级的百分比高度。 */
         .dsh-tp-overlay {
           position: fixed;
           inset: 0;
-          z-index: 99999;
+          z-index: 2147483000;
           display: flex;
           align-items: center;
           justify-content: center;
           padding: 24px 16px;
           background: rgba(12, 14, 18, 0.46);
           box-sizing: border-box;
+          pointer-events: auto;
           animation: dsh-tp-fade 0.14s ease-out;
         }
         .dsh-tp-dialog {
-          width: 660px;
+          width: min(680px, 100%);
           max-width: 100%;
-          max-height: 100%;
+          max-height: min(84vh, 720px);
+          min-height: 0;
           border-radius: 14px;
           background: var(--dsw-alias-bg-floating, #1b1c1f);
           border: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.22));
@@ -1099,7 +1124,7 @@
                   : null,
               ]
 
-        return h('div', { className: 'dsh-tp-overlay', onClick: onClose }, [
+        const overlay = h('div', { className: 'dsh-tp-overlay', onClick: onClose }, [
           h(
             'div',
             {
@@ -1193,6 +1218,8 @@
             ],
           ),
         ])
+
+        return portalToBody(overlay)
       }
 
       // ---------- 胶囊 ----------
