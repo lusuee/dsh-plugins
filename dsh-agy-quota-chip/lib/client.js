@@ -275,23 +275,18 @@
           e.preventDefault()
           e.stopPropagation()
 
-          // 1. Try globally exposed helper
-          if (typeof window.__agyOpenConsole === 'function') {
-            window.__agyOpenConsole()
-            return
-          }
-          // 2. Try clicking header status button
-          const headerBtn = document.querySelector('.agy-session-status-btn')
-          if (headerBtn && typeof headerBtn.click === 'function') {
-            headerBtn.click()
-            return
-          }
-          // 3. Try modal store
           if (window.__agyModalStore && typeof window.__agyModalStore.setOpen === 'function') {
             window.__agyModalStore.setOpen(true)
             return
           }
-          console.warn('[dsh-agy-quota-chip] unable to locate Antigravity console trigger')
+          if (typeof window.__agyOpenConsole === 'function') {
+            window.__agyOpenConsole()
+            return
+          }
+          const headerBtn = document.querySelector('.agy-session-status-btn') || document.querySelector('button.agy-btn')
+          if (headerBtn && typeof headerBtn.click === 'function') {
+            headerBtn.click()
+          }
         }
 
         const elements = [
@@ -338,7 +333,7 @@
           }
         }
 
-        return h(
+        const button = h(
           'button',
           {
             type: 'button',
@@ -349,6 +344,8 @@
           },
           elements
         )
+
+        return button
       }
 
       function apply(ctx) {
