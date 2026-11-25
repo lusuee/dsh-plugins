@@ -46,11 +46,168 @@
       const STYLE_ID = 'dsh-token-pill-style'
 
       // 语义色：输出=蓝、未缓存输入=橙、缓存读取=绿
-      const C_OUT = '#5b8def'
-      const C_IN = '#e0a338'
-      const C_CACHE = '#2fb98a'
+      // 语义色：输出=蓝、未缓存输入=橙、缓存读取=绿（按亮/暗主题给值，见 --dsh-tp-*）
+      const C_OUT = 'var(--dsh-tp-out)'
+      const C_IN = 'var(--dsh-tp-in)'
+      const C_CACHE = 'var(--dsh-tp-cache)'
+
+      // 宿主主题：解析一个宿主背景令牌的亮度即可判定亮色/暗色，
+      // 因为宿主那 14 个 alias 令牌都是 requiresLightAndDark（同一名字、两套取值）。
+      function parseCssColor(text) {
+        const raw = String(text === null || text === undefined ? '' : text).trim()
+        if (!raw) return null
+        let m = raw.match(/^#([0-9a-f]{3,8})$/i)
+        if (m) {
+          const hex = m[1]
+          if (hex.length === 3 || hex.length === 4) {
+            return [
+              parseInt(hex.charAt(0) + hex.charAt(0), 16),
+              parseInt(hex.charAt(1) + hex.charAt(1), 16),
+              parseInt(hex.charAt(2) + hex.charAt(2), 16),
+            ]
+          }
+          if (hex.length === 6 || hex.length === 8) {
+            return [
+              parseInt(hex.slice(0, 2), 16),
+              parseInt(hex.slice(2, 4), 16),
+              parseInt(hex.slice(4, 6), 16),
+            ]
+          }
+          return null
+        }
+        m = raw.match(/^rgba?\(([^)]+)\)$/i)
+        if (m) {
+          const nums = m[1].split(/[\s,/]+/).filter(Boolean).map(Number)
+          if (nums.length >= 3 && nums.slice(0, 3).every(Number.isFinite)) return [nums[0], nums[1], nums[2]]
+        }
+        return null
+      }
+
+      function detectHostTheme() {
+        try {
+          if (typeof document !== 'undefined' && typeof window !== 'undefined' && typeof window.getComputedStyle === 'function') {
+            const el = document.documentElement || document.body
+            if (el) {
+              const styles = window.getComputedStyle(el)
+              const probe = styles && typeof styles.getPropertyValue === 'function' ? styles.getPropertyValue('--dsw-alias-bg-base') : ''
+              const rgb = parseCssColor(probe)
+              if (rgb) {
+                const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
+                return lum > 0.5 ? 'light' : 'dark'
+              }
+            }
+          }
+        } catch {
+          /* 探测失败就走下面的兜底 */
+        }
+        try {
+          if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+            return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+          }
+        } catch {
+          /* 兜底也失败就用亮色 */
+        }
+        return 'light'
+      }
+
+      // 必须在组件里所有 return 之前调用（hook）。
+      function useHostTheme() {
+        const [theme, setTheme] = React.useState(detectHostTheme)
+        React.useEffect(() => {
+          const sync = () => setTheme((prev) => {
+            const next = detectHostTheme()
+            return next === prev ? prev : next
+          })
+          sync()
+          let observer = null
+          let media = null
+          const attrs = ['class', 'style', 'data-theme', 'data-color-scheme']
+          try {
+            if (typeof MutationObserver === 'function' && typeof document !== 'undefined') {
+              observer = new MutationObserver(sync)
+              if (document.documentElement) observer.observe(document.documentElement, { attributes: true, attributeFilter: attrs })
+              if (document.body) observer.observe(document.body, { attributes: true, attributeFilter: attrs })
+            }
+          } catch {
+            observer = null
+          }
+          try {
+            if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+              media = window.matchMedia('(prefers-color-scheme: dark)')
+              if (media && typeof media.addEventListener === 'function') media.addEventListener('change', sync)
+            }
+          } catch {
+            media = null
+          }
+          return () => {
+            try {
+              if (observer) observer.disconnect()
+            } catch {
+              /* ignore */
+            }
+            try {
+              if (media && typeof media.removeEventListener === 'function') media.removeEventListener('change', sync)
+            } catch {
+              /* ignore */
+            }
+          }
+        }, [])
+        return theme
+      }
 
       const STYLE = `
+        /* ===== 主题令牌 =====
+           宿主只提供下面这些 alias 令牌（--dsw-alias-bg-overlay / bg-layer-1 /
+           bg-layer-2 / border-l1 / border-l2 / label-primary / label-secondary /
+           brand-primary / state-*），亮暗暗色由宿主自己切换。所以这里只把
+           宿主令牌映射到 --dsh-tp-*，本插件独有的语义色（输出/输入/缓存、
+           轨道、遮罩、阴影）按亮暗两套给值，通过 data-dsh-tp-theme 切换。 */
+        .dsh-tp-scope {
+          --dsh-tp-surface: var(--dsw-alias-bg-overlay, #ffffff);
+          --dsh-tp-surface-2: var(--dsw-alias-bg-layer-1, #f5f6f8);
+          --dsh-tp-surface-3: var(--dsw-alias-bg-layer-2, #eceef2);
+          --dsh-tp-border: var(--dsw-alias-border-l1, rgba(16, 20, 28, 0.12));
+          --dsh-tp-border-strong: var(--dsw-alias-border-l2, rgba(16, 20, 28, 0.22));
+          --dsh-tp-fg: var(--dsw-alias-label-primary, #16181d);
+          --dsh-tp-fg-dim: var(--dsw-alias-label-secondary, #575c66);
+          --dsh-tp-brand: var(--dsw-alias-brand-primary, #2f6fe0);
+          --dsh-tp-track: rgba(16, 20, 28, 0.1);
+          --dsh-tp-hover: rgba(16, 20, 28, 0.06);
+          --dsh-tp-out: #2f6fe0;
+          --dsh-tp-in: #a9630d;
+          --dsh-tp-cache: #0c7f5b;
+          --dsh-tp-out-soft: rgba(47, 111, 224, 0.16);
+          --dsh-tp-out-weak: rgba(47, 111, 224, 0.55);
+          --dsh-tp-out-tint: rgba(47, 111, 224, 0.08);
+          --dsh-tp-scrim: rgba(16, 20, 28, 0.42);
+          --dsh-tp-shadow: 0 20px 50px rgba(16, 20, 28, 0.18), 0 2px 8px rgba(16, 20, 28, 0.1);
+          --dsh-tp-on-brand: #ffffff;
+          color-scheme: light;
+        }
+        .dsh-tp-scope[data-dsh-tp-theme='dark'] {
+          --dsh-tp-surface: var(--dsw-alias-bg-overlay, #232529);
+          --dsh-tp-surface-2: var(--dsw-alias-bg-layer-1, #26282e);
+          --dsh-tp-surface-3: var(--dsw-alias-bg-layer-2, #2e3138);
+          --dsh-tp-border: var(--dsw-alias-border-l1, rgba(255, 255, 255, 0.14));
+          --dsh-tp-border-strong: var(--dsw-alias-border-l2, rgba(255, 255, 255, 0.26));
+          --dsh-tp-fg: var(--dsw-alias-label-primary, #f2f3f5);
+          --dsh-tp-fg-dim: var(--dsw-alias-label-secondary, #a9aeb9);
+          --dsh-tp-brand: var(--dsw-alias-brand-primary, #7aa7ff);
+          --dsh-tp-track: rgba(255, 255, 255, 0.14);
+          --dsh-tp-hover: rgba(255, 255, 255, 0.08);
+          --dsh-tp-out: #82abff;
+          --dsh-tp-in: #eab948;
+          --dsh-tp-cache: #3ed3a3;
+          --dsh-tp-out-soft: rgba(130, 171, 255, 0.2);
+          --dsh-tp-out-weak: rgba(130, 171, 255, 0.6);
+          --dsh-tp-out-tint: rgba(130, 171, 255, 0.12);
+          --dsh-tp-scrim: rgba(4, 6, 10, 0.62);
+          --dsh-tp-shadow: 0 20px 50px rgba(0, 0, 0, 0.52), 0 2px 8px rgba(0, 0, 0, 0.36);
+          --dsh-tp-on-brand: #0b1220;
+          color-scheme: dark;
+        }
+
+        /* ===== 胶囊 ===== */
         .dsh-tp-group {
           display: inline-flex;
           align-items: center;
@@ -64,12 +221,12 @@
           height: 24px;
           padding: 0 8px;
           border-radius: 9999px;
-          border: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.22));
-          background: var(--dsw-alias-bg-subtle, rgba(128, 128, 128, 0.08));
-          color: var(--dsw-alias-label-primary, inherit);
+          border: 1px solid var(--dsh-tp-border);
+          background: var(--dsh-tp-hover);
+          color: var(--dsh-tp-fg);
           font: inherit;
           font-size: 11px;
-          font-weight: 500;
+          font-weight: 550;
           line-height: 1;
           cursor: pointer;
           user-select: none;
@@ -79,34 +236,34 @@
           box-sizing: border-box;
         }
         .dsh-tp-btn:hover {
-          background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.16));
-          border-color: var(--dsw-alias-border-hover, rgba(128, 128, 128, 0.38));
+          background: var(--dsh-tp-track);
+          border-color: var(--dsh-tp-border-strong);
           transform: translateY(-0.5px);
         }
         .dsh-tp-btn:active { transform: translateY(0); }
-        .dsh-tp-btn-empty { opacity: 0.7; }
+        .dsh-tp-btn-empty { opacity: 0.72; }
         .dsh-tp-btn-empty:hover { opacity: 1; }
         .dsh-tp-icon {
           font-size: 11px;
           line-height: 1;
-          color: var(--dsw-alias-brand, #5b8def);
+          color: var(--dsh-tp-brand);
         }
-        .dsh-tp-icon-dim { opacity: 0.6; }
+        .dsh-tp-icon-dim { color: var(--dsh-tp-fg-dim); }
         .dsh-tp-main {
           font-variant-numeric: tabular-nums;
-          font-weight: 600;
+          font-weight: 650;
+          color: var(--dsh-tp-fg);
         }
-        .dsh-tp-dim { opacity: 0.75; font-weight: 500; }
+        .dsh-tp-dim { font-weight: 550; color: var(--dsh-tp-fg-dim); }
         .dsh-tp-cache {
           font-variant-numeric: tabular-nums;
-          color: var(--dsw-alias-state-success, #2fb98a);
+          color: var(--dsh-tp-cache);
           font-size: 10.5px;
-          font-weight: 500;
+          font-weight: 600;
         }
 
         /* ===== 面板骨架 =====
-           整块由 portal 挂到 document.body，祖先不再有包含块/裁剪，所以这里
-           用确定尺寸（vh / px），不依赖父级的百分比高度。 */
+           整块由 portal 挂到 document.body：祖先不再有包含块/裁剪，尺寸用确定值。 */
         .dsh-tp-overlay {
           position: fixed;
           inset: 0;
@@ -115,26 +272,26 @@
           align-items: center;
           justify-content: center;
           padding: 24px 16px;
-          background: rgba(12, 14, 18, 0.46);
+          background: var(--dsh-tp-scrim);
           box-sizing: border-box;
           pointer-events: auto;
           animation: dsh-tp-fade 0.14s ease-out;
         }
         .dsh-tp-dialog {
-          width: min(680px, 100%);
+          width: min(700px, 100%);
           max-width: 100%;
           max-height: min(84vh, 720px);
           min-height: 0;
           border-radius: 14px;
-          background: var(--dsw-alias-bg-floating, #1b1c1f);
-          border: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.22));
-          box-shadow: 0 18px 48px rgba(0, 0, 0, 0.42), 0 2px 8px rgba(0, 0, 0, 0.24);
+          background: var(--dsh-tp-surface);
+          border: 1px solid var(--dsh-tp-border-strong);
+          box-shadow: var(--dsh-tp-shadow);
           display: flex;
           flex-direction: column;
           overflow: hidden;
-          color: var(--dsw-alias-label-primary, inherit);
+          color: var(--dsh-tp-fg);
           font: inherit;
-          font-size: 12px;
+          font-size: 12.5px;
           box-sizing: border-box;
           animation: dsh-tp-pop 0.16s cubic-bezier(0.16, 1, 0.3, 1);
         }
@@ -149,7 +306,7 @@
           display: flex;
           align-items: center;
           gap: 10px;
-          padding: 12px 16px 10px;
+          padding: 13px 16px 11px;
           flex: 0 0 auto;
         }
         .dsh-tp-badge {
@@ -161,44 +318,46 @@
           align-items: center;
           justify-content: center;
           font-size: 13px;
-          background: rgba(91, 141, 239, 0.14);
-          color: var(--dsw-alias-brand, #5b8def);
+          background: var(--dsh-tp-out-soft);
+          color: var(--dsh-tp-brand);
         }
-        .dsh-tp-head-text { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+        .dsh-tp-head-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
         .dsh-tp-head-title {
-          font-size: 13px;
-          font-weight: 650;
+          font-size: 13.5px;
+          font-weight: 700;
           letter-spacing: 0.01em;
           line-height: 1.3;
+          color: var(--dsh-tp-fg);
         }
         .dsh-tp-head-sub {
-          font-size: 10.5px;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          font-size: 11px;
+          color: var(--dsh-tp-fg-dim);
           line-height: 1.3;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
         .dsh-tp-icon-btn {
-          width: 24px;
-          height: 24px;
+          width: 26px;
+          height: 26px;
           flex: 0 0 auto;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           padding: 0;
-          border: 0;
+          border: 1px solid transparent;
           border-radius: 6px;
           background: transparent;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          color: var(--dsh-tp-fg-dim);
           font-size: 13px;
           line-height: 1;
           cursor: pointer;
-          transition: background 0.14s, color 0.14s;
+          transition: background 0.14s, color 0.14s, border-color 0.14s;
         }
         .dsh-tp-icon-btn:hover {
-          background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.16));
-          color: var(--dsw-alias-label-primary, inherit);
+          background: var(--dsh-tp-hover);
+          border-color: var(--dsh-tp-border);
+          color: var(--dsh-tp-fg);
         }
 
         /* ===== 分段控件（页签 / 时间范围） ===== */
@@ -209,7 +368,8 @@
           gap: 2px;
           padding: 2px;
           border-radius: 8px;
-          background: var(--dsw-alias-bg-subtle, rgba(128, 128, 128, 0.1));
+          background: var(--dsh-tp-surface-3);
+          border: 1px solid var(--dsh-tp-border);
           box-sizing: border-box;
         }
         .dsh-tp-seg-item {
@@ -217,20 +377,20 @@
           border: 0;
           border-radius: 6px;
           background: transparent;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          color: var(--dsh-tp-fg-dim);
           font: inherit;
           font-size: 11.5px;
-          font-weight: 550;
+          font-weight: 600;
           line-height: 1.4;
           cursor: pointer;
           white-space: nowrap;
           transition: background 0.14s, color 0.14s, box-shadow 0.14s;
         }
-        .dsh-tp-seg-item:hover { color: var(--dsw-alias-label-primary, inherit); }
+        .dsh-tp-seg-item:hover { color: var(--dsh-tp-fg); }
         .dsh-tp-seg-item-on {
-          background: var(--dsw-alias-bg-floating, #26272b);
-          color: var(--dsw-alias-label-primary, inherit);
-          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.22);
+          background: var(--dsh-tp-surface);
+          color: var(--dsh-tp-fg);
+          box-shadow: 0 1px 3px rgba(0, 0, 0, 0.16);
         }
 
         /* ===== 内容区 ===== */
@@ -246,26 +406,26 @@
         }
         .dsh-tp-body::-webkit-scrollbar { width: 8px; }
         .dsh-tp-body::-webkit-scrollbar-thumb {
-          background: rgba(128, 128, 128, 0.28);
+          background: var(--dsh-tp-track);
           border-radius: 4px;
         }
         .dsh-tp-body::-webkit-scrollbar-track { background: transparent; }
 
         /* ===== 主数字卡 ===== */
         .dsh-tp-hero {
-          padding: 12px 14px;
+          padding: 13px 14px;
           border-radius: 10px;
-          background: linear-gradient(180deg, rgba(91, 141, 239, 0.07), rgba(91, 141, 239, 0.02));
-          border: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.16));
+          background: var(--dsh-tp-surface-2);
+          border: 1px solid var(--dsh-tp-border);
           display: flex;
           flex-direction: column;
-          gap: 9px;
+          gap: 10px;
         }
         .dsh-tp-hero-label {
-          font-size: 10.5px;
-          font-weight: 550;
+          font-size: 11px;
+          font-weight: 600;
           letter-spacing: 0.02em;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          color: var(--dsh-tp-fg-dim);
         }
         .dsh-tp-hero-row {
           display: flex;
@@ -274,21 +434,22 @@
           flex-wrap: wrap;
         }
         .dsh-tp-hero-val {
-          font-size: 26px;
-          font-weight: 700;
+          font-size: 27px;
+          font-weight: 750;
           line-height: 1.1;
           letter-spacing: -0.01em;
           font-variant-numeric: tabular-nums;
+          color: var(--dsh-tp-fg);
         }
         .dsh-tp-hero-unit {
-          font-size: 11.5px;
-          font-weight: 550;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          font-size: 12px;
+          font-weight: 600;
+          color: var(--dsh-tp-fg-dim);
         }
         .dsh-tp-hero-exact {
           margin-left: auto;
-          font-size: 10.5px;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          font-size: 11px;
+          color: var(--dsh-tp-fg-dim);
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
         }
@@ -297,13 +458,13 @@
         .dsh-tp-comp-track {
           display: flex;
           width: 100%;
-          height: 8px;
-          border-radius: 4px;
+          height: 9px;
+          border-radius: 5px;
           overflow: hidden;
-          background: var(--dsw-alias-bg-subtle, rgba(128, 128, 128, 0.14));
+          background: var(--dsh-tp-track);
         }
         .dsh-tp-comp-seg { height: 100%; transition: width 0.28s ease; }
-        .dsh-tp-comp-seg + .dsh-tp-comp-seg { box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.14); }
+        .dsh-tp-comp-seg + .dsh-tp-comp-seg { box-shadow: inset 1px 0 0 rgba(0, 0, 0, 0.16); }
         .dsh-tp-legend {
           display: flex;
           align-items: center;
@@ -314,22 +475,26 @@
           display: inline-flex;
           align-items: center;
           gap: 5px;
-          font-size: 10.5px;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          font-size: 11px;
+          color: var(--dsh-tp-fg-dim);
           line-height: 1.4;
         }
         .dsh-tp-dot {
-          width: 7px;
-          height: 7px;
+          width: 8px;
+          height: 8px;
           flex: 0 0 auto;
           border-radius: 2px;
         }
         .dsh-tp-legend-val {
-          color: var(--dsw-alias-label-primary, inherit);
+          color: var(--dsh-tp-fg);
+          font-weight: 650;
+          font-variant-numeric: tabular-nums;
+        }
+        .dsh-tp-legend-pct {
+          color: var(--dsh-tp-fg-dim);
           font-weight: 600;
           font-variant-numeric: tabular-nums;
         }
-        .dsh-tp-legend-pct { opacity: 0.72; font-variant-numeric: tabular-nums; }
 
         /* ===== 指标网格 ===== */
         .dsh-tp-grid {
@@ -341,33 +506,34 @@
           .dsh-tp-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
         .dsh-tp-tile {
-          padding: 8px 10px;
+          padding: 9px 11px;
           border-radius: 8px;
-          background: var(--dsw-alias-bg-subtle, rgba(128, 128, 128, 0.07));
-          border: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.1));
+          background: var(--dsh-tp-surface-2);
+          border: 1px solid var(--dsh-tp-border);
           display: flex;
           flex-direction: column;
-          gap: 3px;
+          gap: 4px;
           min-width: 0;
         }
         .dsh-tp-tile-label {
-          font-size: 10px;
-          font-weight: 500;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          font-size: 10.5px;
+          font-weight: 600;
+          color: var(--dsh-tp-fg-dim);
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
         .dsh-tp-tile-val {
-          font-size: 15px;
-          font-weight: 680;
+          font-size: 16px;
+          font-weight: 720;
           line-height: 1.2;
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
+          color: var(--dsh-tp-fg);
         }
         .dsh-tp-tile-sub {
-          font-size: 9.5px;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          font-size: 10px;
+          color: var(--dsh-tp-fg-dim);
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
           overflow: hidden;
@@ -383,15 +549,14 @@
           gap: 8px;
         }
         .dsh-tp-sec-title {
-          font-size: 11px;
-          font-weight: 600;
+          font-size: 11.5px;
+          font-weight: 650;
           letter-spacing: 0.01em;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          color: var(--dsh-tp-fg);
         }
         .dsh-tp-sec-hint {
-          font-size: 10px;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
-          opacity: 0.8;
+          font-size: 10.5px;
+          color: var(--dsh-tp-fg-dim);
           font-variant-numeric: tabular-nums;
         }
 
@@ -407,41 +572,37 @@
         }
         .dsh-tp-trend::-webkit-scrollbar { width: 6px; }
         .dsh-tp-trend::-webkit-scrollbar-thumb {
-          background: rgba(128, 128, 128, 0.26);
+          background: var(--dsh-tp-track);
           border-radius: 3px;
         }
         .dsh-tp-trend-row {
           display: grid;
-          grid-template-columns: 82px minmax(0, 1fr) 62px 44px;
+          grid-template-columns: 86px minmax(0, 1fr) 66px 46px;
           align-items: center;
           gap: 8px;
           padding: 4px 6px;
           border-radius: 6px;
           transition: background 0.12s;
         }
-        .dsh-tp-trend-row:hover {
-          background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.09));
-        }
-        .dsh-tp-trend-row-today {
-          background: rgba(91, 141, 239, 0.08);
-        }
+        .dsh-tp-trend-row:hover { background: var(--dsh-tp-hover); }
+        .dsh-tp-trend-row-today { background: var(--dsh-tp-out-tint); }
         .dsh-tp-trend-date {
-          font-size: 10.5px;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          font-size: 11px;
+          color: var(--dsh-tp-fg-dim);
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
           overflow: hidden;
           text-overflow: ellipsis;
         }
         .dsh-tp-trend-date-today {
-          color: var(--dsw-alias-brand, #5b8def);
-          font-weight: 600;
+          color: var(--dsh-tp-brand);
+          font-weight: 700;
         }
         .dsh-tp-track {
           position: relative;
-          height: 7px;
+          height: 8px;
           border-radius: 4px;
-          background: var(--dsw-alias-bg-subtle, rgba(128, 128, 128, 0.13));
+          background: var(--dsh-tp-track);
           overflow: hidden;
         }
         .dsh-tp-track-fill {
@@ -452,17 +613,18 @@
           transition: width 0.3s ease;
         }
         .dsh-tp-trend-total {
-          font-size: 10.5px;
-          font-weight: 600;
+          font-size: 11px;
+          font-weight: 650;
           text-align: right;
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
+          color: var(--dsh-tp-fg);
         }
         .dsh-tp-trend-cache {
-          font-size: 10px;
+          font-size: 10.5px;
           text-align: right;
           font-variant-numeric: tabular-nums;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          color: var(--dsh-tp-fg-dim);
           white-space: nowrap;
         }
 
@@ -470,28 +632,27 @@
         .dsh-tp-rank { display: flex; flex-direction: column; gap: 2px; }
         .dsh-tp-rank-row {
           display: grid;
-          grid-template-columns: 16px minmax(0, 1fr) 116px;
+          grid-template-columns: 18px minmax(0, 1fr) 120px;
           align-items: center;
           gap: 8px;
           padding: 5px 6px;
           border-radius: 6px;
           transition: background 0.12s;
         }
-        .dsh-tp-rank-row:hover {
-          background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.09));
-        }
+        .dsh-tp-rank-row:hover { background: var(--dsh-tp-hover); }
         .dsh-tp-rank-no {
-          font-size: 9.5px;
+          font-size: 10px;
           font-weight: 700;
           text-align: center;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          color: var(--dsh-tp-fg-dim);
           font-variant-numeric: tabular-nums;
         }
         .dsh-tp-rank-main { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
         .dsh-tp-rank-title {
-          font-size: 11.5px;
-          font-weight: 500;
+          font-size: 12px;
+          font-weight: 550;
           line-height: 1.3;
+          color: var(--dsh-tp-fg);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -500,14 +661,14 @@
           position: relative;
           height: 4px;
           border-radius: 2px;
-          background: var(--dsw-alias-bg-subtle, rgba(128, 128, 128, 0.13));
+          background: var(--dsh-tp-track);
           overflow: hidden;
         }
         .dsh-tp-rank-fill {
           position: absolute;
           inset: 0 auto 0 0;
           border-radius: 2px;
-          background: linear-gradient(90deg, rgba(91, 141, 239, 0.9), rgba(91, 141, 239, 0.55));
+          background: linear-gradient(90deg, var(--dsh-tp-out), var(--dsh-tp-out-weak));
         }
         .dsh-tp-rank-num {
           display: flex;
@@ -516,24 +677,26 @@
           text-align: right;
         }
         .dsh-tp-rank-total {
-          font-size: 11px;
-          font-weight: 600;
+          font-size: 11.5px;
+          font-weight: 650;
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
+          color: var(--dsh-tp-fg);
         }
         .dsh-tp-rank-sub {
-          font-size: 9.5px;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          font-size: 10px;
+          color: var(--dsh-tp-fg-dim);
           font-variant-numeric: tabular-nums;
           white-space: nowrap;
         }
 
-        /* ===== 明细行（最近一轮 / 效率） ===== */
+        /* ===== 明细行（最近一轮 / 规模） ===== */
         .dsh-tp-detail {
           display: flex;
           flex-direction: column;
           border-radius: 8px;
-          border: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.13));
+          border: 1px solid var(--dsh-tp-border);
+          background: var(--dsh-tp-surface-2);
           overflow: hidden;
         }
         .dsh-tp-detail-row {
@@ -541,17 +704,18 @@
           align-items: center;
           justify-content: space-between;
           gap: 10px;
-          padding: 6px 10px;
-          font-size: 11px;
+          padding: 7px 11px;
+          font-size: 11.5px;
         }
         .dsh-tp-detail-row + .dsh-tp-detail-row {
-          border-top: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.1));
+          border-top: 1px solid var(--dsh-tp-border);
         }
-        .dsh-tp-detail-key { color: var(--dsw-alias-label-secondary, #8e8e93); }
+        .dsh-tp-detail-key { color: var(--dsh-tp-fg-dim); font-weight: 550; }
         .dsh-tp-detail-val {
-          font-weight: 600;
+          font-weight: 650;
           font-variant-numeric: tabular-nums;
           text-align: right;
+          color: var(--dsh-tp-fg);
         }
 
         /* ===== 空态 / 加载态 ===== */
@@ -564,13 +728,13 @@
           text-align: center;
           gap: 10px;
         }
-        .dsh-tp-empty-icon { font-size: 30px; line-height: 1; opacity: 0.9; }
-        .dsh-tp-empty-title { font-size: 13px; font-weight: 650; }
+        .dsh-tp-empty-icon { font-size: 30px; line-height: 1; color: var(--dsh-tp-brand); }
+        .dsh-tp-empty-title { font-size: 13.5px; font-weight: 700; color: var(--dsh-tp-fg); }
         .dsh-tp-empty-desc {
-          font-size: 11.5px;
+          font-size: 12px;
           line-height: 1.65;
           max-width: 400px;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          color: var(--dsh-tp-fg-dim);
         }
 
         /* ===== 底部 ===== */
@@ -581,12 +745,12 @@
           justify-content: space-between;
           gap: 10px;
           padding: 10px 16px;
-          border-top: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.14));
-          background: var(--dsw-alias-bg-subtle, rgba(128, 128, 128, 0.04));
+          border-top: 1px solid var(--dsh-tp-border);
+          background: var(--dsh-tp-surface-2);
         }
         .dsh-tp-foot-note {
-          font-size: 10px;
-          color: var(--dsw-alias-label-secondary, #8e8e93);
+          font-size: 10.5px;
+          color: var(--dsh-tp-fg-dim);
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
@@ -595,12 +759,12 @@
         .dsh-tp-btn-ghost {
           padding: 5px 11px;
           border-radius: 6px;
-          border: 1px solid var(--dsw-alias-border, rgba(128, 128, 128, 0.24));
-          background: transparent;
-          color: var(--dsw-alias-label-primary, inherit);
+          border: 1px solid var(--dsh-tp-border-strong);
+          background: var(--dsh-tp-surface);
+          color: var(--dsh-tp-fg);
           font: inherit;
           font-size: 11.5px;
-          font-weight: 500;
+          font-weight: 600;
           line-height: 1.4;
           cursor: pointer;
           display: inline-flex;
@@ -610,18 +774,18 @@
           transition: background 0.14s, border-color 0.14s;
         }
         .dsh-tp-btn-ghost:hover {
-          background: var(--dsw-alias-interactive-bg-hover, rgba(128, 128, 128, 0.16));
-          border-color: var(--dsw-alias-border-hover, rgba(128, 128, 128, 0.36));
+          background: var(--dsh-tp-hover);
+          border-color: var(--dsh-tp-border-strong);
         }
         .dsh-tp-btn-primary {
           padding: 5px 16px;
           border-radius: 6px;
           border: 1px solid transparent;
-          background: var(--dsw-alias-brand, #5b8def);
-          color: #fff;
+          background: var(--dsh-tp-brand);
+          color: var(--dsh-tp-on-brand);
           font: inherit;
           font-size: 11.5px;
-          font-weight: 600;
+          font-weight: 650;
           line-height: 1.4;
           cursor: pointer;
           white-space: nowrap;
@@ -782,6 +946,7 @@
         const [tab, setTab] = React.useState('session')
         const [globalRange, setGlobalRange] = React.useState('week')
         const [copied, setCopied] = React.useState(false)
+        const theme = useHostTheme()
 
         // 打开时：有本会话数据就落在「当前会话」，否则直接看全局
         React.useEffect(() => {
@@ -1070,7 +1235,7 @@
                                   className: 'dsh-tp-track-fill',
                                   style: {
                                     width: (trendMax > 0 ? pctOf(d.total, trendMax) : 0) + '%',
-                                    background: 'linear-gradient(90deg, ' + C_OUT + ', rgba(91, 141, 239, 0.5))',
+                                    background: 'linear-gradient(90deg, var(--dsh-tp-out), var(--dsh-tp-out-weak))',
                                   },
                                 }),
                               ]),
@@ -1124,7 +1289,10 @@
                   : null,
               ]
 
-        const overlay = h('div', { className: 'dsh-tp-overlay', onClick: onClose }, [
+        const overlay = h(
+          'div',
+          { className: 'dsh-tp-scope dsh-tp-overlay', 'data-dsh-tp-theme': theme, onClick: onClose },
+          [
           h(
             'div',
             {
@@ -1238,6 +1406,7 @@
 
         const [modalOpen, setModalOpen] = React.useState(false)
         const [globalData, setGlobalData] = React.useState(null)
+        const theme = useHostTheme()
 
         const fetchGlobalStats = React.useCallback(() => {
           const url = typeof document !== 'undefined' ? new URL(STATS_ROUTE, document.baseURI).href : STATS_ROUTE
@@ -1308,7 +1477,7 @@
         // 空会话 / 首页：输入区保留一个低调的「⚡ 0」，头部不显示
         if (totalTokens <= 0) {
           if (props.placement === 'header') return null
-          return h('span', { className: 'dsh-tp-group' }, [
+          return h('span', { className: 'dsh-tp-scope dsh-tp-group', 'data-dsh-tp-theme': theme }, [
             h(
               'button',
               {
@@ -1348,7 +1517,7 @@
           'Token 用量 · 点击查看明细\n总消耗 ' + formatTokens(totalTokens) +
           '（输出 ' + formatTokens(output) + ' · 缓存 ' + pctText(cachePct, 0) + '）'
 
-        return h('span', { className: 'dsh-tp-group' }, [
+        return h('span', { className: 'dsh-tp-scope dsh-tp-group', 'data-dsh-tp-theme': theme }, [
           h(
             'button',
             {
