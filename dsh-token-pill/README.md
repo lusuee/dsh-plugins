@@ -18,7 +18,9 @@
 ## 数据来源
 
 - 当前会话：会话 projection 缓存中的 `tokenUsage` / `sessionStats`，随对话实时刷新。
-- 全局历史：`~/.dsh/storages/cost-meter/ledger.json` 的每日账本，并合并近 48 小时内活跃会话的 projection 数据。
+- 全局历史：扫描 `~/.dsh/sessions` 下的会话日志，按**本地时区**把每条 assistant 消息的 usage 汇总到日期；首次请求解析全部日志，之后只重新解析有变化的文件。
+- 兼容兜底：若存在 `~/.dsh/storages/cost-meter/ledger.json` 的每日账本，则按“同一天取总量更完整者”合并；近 48 小时内活跃会话的 projection 数据用于补上尚未落盘的增量。
+- 同一会话迁移后可能同时存在 `session.jsonl.zstd` 与 `session.v4.jsonl.zstd`，会按新版优先去重，避免重复累计。
 
 ## 注意
 

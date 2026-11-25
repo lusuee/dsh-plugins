@@ -1454,6 +1454,11 @@
           fetchGlobalStats()
         }, [fetchGlobalStats])
 
+        // 打开面板时重新拉取，避免显示挂载时的旧全局数据。
+        React.useEffect(() => {
+          if (modalOpen) fetchGlobalStats()
+        }, [modalOpen, fetchGlobalStats])
+
         // 统一可靠提取数据
         const { uncached, output, cacheRead, cacheWrite } = extractTokenTotals(rawUsage, rawMeasurement)
         const totalInput = uncached + cacheRead
