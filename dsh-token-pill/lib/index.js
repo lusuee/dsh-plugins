@@ -38,6 +38,7 @@ export function aggregateStats() {
 
   const allDays = {}
   const sessionsMap = new Map()
+  const ledgerSessionTotals = new Map()
 
   // 1. Read ledger.json if exists
   if (existsSync(ledgerPath)) {
@@ -55,12 +56,20 @@ export function aggregateStats() {
           if (Array.isArray(v.sessions)) {
             for (const s of v.sessions) {
               if (s && s.id) {
+                // 累计历史账本中该会话已被记录的 Token
+                const rec = ledgerSessionTotals.get(s.id) || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+                rec.input += Number(s.input || 0)
+                rec.output += Number(s.output || 0)
+                rec.cacheRead += Number(s.cacheRead || 0)
+                rec.cacheWrite += Number(s.cacheWrite || 0)
+                ledgerSessionTotals.set(s.id, rec)
+
                 sessionsMap.set(s.id, {
                   id: s.id,
                   title: s.title || '无标题会话',
-                  input: Number(s.input || 0),
-                  output: Number(s.output || 0),
-                  cacheRead: Number(s.cacheRead || 0),
+                  input: rec.input,
+                  output: rec.output,
+                  cacheRead: rec.cacheRead,
                   lastAt: s.at || 0,
                 })
               }
@@ -101,13 +110,23 @@ export function aggregateStats() {
             const output = Number(tu.outputTokens || 0)
             const cacheRead = Number(tu.cacheReadTokens || 0)
             const cacheWrite = Number(tu.cacheWriteTokens || 0)
-            if (mdate === todayStr) {
-              allDays[todayStr].input += input
-              allDays[todayStr].output += output
-              allDays[todayStr].cacheRead += cacheRead
-              allDays[todayStr].cacheWrite += cacheWrite
+
+            // 仅将「未落盘进 ledger.json 的增量」计入今日统计，避免将老会话的历史总量重复累加到今天
+            const recorded = ledgerSessionTotals.get(sessionId) || { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+            const deltaInput = Math.max(0, input - recorded.input)
+            const deltaOutput = Math.max(0, output - recorded.output)
+            const deltaCacheRead = Math.max(0, cacheRead - recorded.cacheRead)
+            const deltaCacheWrite = Math.max(0, cacheWrite - recorded.cacheWrite)
+
+            if (mdate === todayStr && deltaInput + deltaOutput + deltaCacheRead > 0) {
+              allDays[todayStr].input += deltaInput
+              allDays[todayStr].output += deltaOutput
+              allDays[todayStr].cacheRead += deltaCacheRead
+              allDays[todayStr].cacheWrite += deltaCacheWrite
               allDays[todayStr].calls++
             }
+
+            // 会话排行榜保留完整实际总量
             sessionsMap.set(sessionId, {
               id: sessionId,
               title: typeof title === 'string' ? title : '未命名会话',
