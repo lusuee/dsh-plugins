@@ -1,0 +1,25 @@
+{
+  "name": "dsh-token-pill",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ultra-lightweight session token usage and cache hit rate pill in the session header.",
+  "main": "./lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
